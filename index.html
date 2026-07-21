@@ -288,6 +288,7 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
 .address-suggestion{display:block;width:100%;border:0;border-bottom:1px solid #e5ebf0;background:#fff;text-align:left;padding:10px 12px;cursor:pointer;color:#1f3448;font:inherit}
 .address-suggestion:last-child{border-bottom:0}.address-suggestion:hover,.address-suggestion:focus{background:#eef5fb;outline:none}
 .address-suggestion strong{display:block;color:var(--navy);font-size:12px}.address-suggestion small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.address-more-button{display:block;width:100%;border:0;background:#f4f7fa;color:var(--navy);font-weight:700;text-align:center;padding:9px 12px;cursor:pointer}.address-more-button:hover,.address-more-button:focus{background:#e8f0f7;outline:none}
 .address-search-status{min-height:16px;margin-top:4px;color:var(--muted);font-size:10px;line-height:1.3}
 .address-search-status.ok{color:#2e7d32}.address-search-status.warn{color:#a35d00}.address-search-status.bad{color:#b3261e}
 .address-config{margin-top:12px;padding:11px;border:1px solid var(--border);border-radius:7px;background:#f8fafc}
@@ -325,7 +326,7 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
     </div>
     <div class="report-title">
       <h1>Water Leak Detection Investigation Report</h1>
-      <p>Client, Commercial & Insurance Reporting · Version 3.0.9</p>
+      <p>Client, Commercial & Insurance Reporting · Version 3.0.10</p>
     </div>
   </header>
 
@@ -782,7 +783,7 @@ const ReportStandards = (()=>{
   return {initialise,validateRequiredFields,isNotApplicable};
 })();
 
-const APP_VERSION = "3.0.9";
+const APP_VERSION = "3.0.10";
 // Set this to the HTTPS address of the published update manifest. It can also be configured in this browser with UpdateManager.setManifestUrl(url).
 const DEFAULT_UPDATE_MANIFEST_URL = "";
 const BACKUP_SCHEMA = "archers-water-leak-report-backup-v1";
@@ -3625,28 +3626,48 @@ const AddressAssist = (()=>{
   const KEY_STORAGE="archers_geoapify_api_key_v1";
   const TAS_FILTER="rect:143.7,-43.75,148.6,-39.0";
   const TAS_BIAS="proximity:147.3257,-42.8821";
-  let timer=null, controller=null, activeResults=[];
+  const DEFAULT_LIMIT=1;
+  const EXPANDED_LIMIT=6;
+  let timer=null, controller=null, activeResults=[], currentQuery="", expanded=false, selectionInProgress=false;
   const byId=id=>document.getElementById(id);
   const input=()=>document.querySelector('[name="siteAddress"]');
   const typeInput=()=>document.querySelector('[name="propertyType"]');
   const key=()=>{try{return localStorage.getItem(KEY_STORAGE)||""}catch{return ""}};
   function status(text,level=""){const el=byId("siteAddressSearchStatus");if(el){el.textContent=text;el.className="address-search-status no-print"+(level?` ${level}`:"")}}
   function configStatus(text,level=""){const el=byId("addressConfigStatus");if(el){el.textContent=text;el.className="address-search-status"+(level?` ${level}`:"")}}
-  function hide(){const host=byId("siteAddressSuggestions");if(host){host.classList.remove("show");host.innerHTML=""}activeResults=[]}
+  function hide(){const host=byId("siteAddressSuggestions");if(host){host.classList.remove("show");host.innerHTML=""}activeResults=[];expanded=false}
   function esc(v){return String(v??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-  function debounceSearch(){clearTimeout(timer);const q=(input()?.value||"").trim();if(q.length<3){hide();status(q?"Enter at least 3 characters for suggestions.":"");return}timer=setTimeout(()=>search(q),320)}
-  async function search(q){
+  function debounceSearch(){if(selectionInProgress)return;clearTimeout(timer);const q=(input()?.value||"").trim();if(q.length<3){hide();status(q?"Enter at least 3 characters for address search.":"");return}currentQuery=q;expanded=false;timer=setTimeout(()=>search(q,DEFAULT_LIMIT),320)}
+  async function search(q,limit=DEFAULT_LIMIT){
     if(!navigator.onLine){hide();status("Offline — enter the address manually.","warn");return}
-    const apiKey=key();if(!apiKey){hide();status("Online address suggestions are not configured. Manual entry remains available.","warn");return}
-    controller?.abort();controller=new AbortController();status("Searching Tasmanian addresses…");
-    const url=`https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(q)}&format=json&lang=en&limit=8&filter=${encodeURIComponent(TAS_FILTER)}&bias=${encodeURIComponent(TAS_BIAS)}&apiKey=${encodeURIComponent(apiKey)}`;
+    const apiKey=key();if(!apiKey){hide();status("Online address search is not configured. Manual entry remains available.","warn");return}
+    controller?.abort();controller=new AbortController();status(limit===DEFAULT_LIMIT?"Finding the best Tasmanian address…":"Finding more Tasmanian addresses…");
+    const url=`https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(q)}&format=json&lang=en&limit=${limit}&filter=${encodeURIComponent(TAS_FILTER)}&bias=${encodeURIComponent(TAS_BIAS)}&apiKey=${encodeURIComponent(apiKey)}`;
     try{
       const res=await fetch(url,{signal:controller.signal,cache:"no-store"});if(!res.ok)throw new Error(`Address service returned ${res.status}`);
       const data=await res.json();activeResults=(data.results||[]).filter(r=>String(r.state||"").toLowerCase().includes("tas")||String(r.state_code||"").toLowerCase()==="tas");
-      render(activeResults);status(activeResults.length?`${activeResults.length} Tasmanian suggestion${activeResults.length===1?"":"s"} found.`:"No Tasmanian matches found. You can still type the address manually.",activeResults.length?"ok":"warn");
-    }catch(err){if(err.name==="AbortError")return;hide();status("Address suggestions are temporarily unavailable. Manual entry still works.","warn");console.warn("Address autocomplete",err)}
+      expanded=limit>DEFAULT_LIMIT;
+      if(!activeResults.length){hide();status("No Tasmanian match found. You can still type the address manually.","warn");return}
+      if(limit===DEFAULT_LIMIT&&isVeryHighConfidence(activeResults[0],q)){select(0,true);return}
+      render();
+      status(expanded?`${activeResults.length} possible Tasmanian addresses found. Select the correct address.`:"Best matching Tasmanian address found. Press Enter or click to accept.","ok");
+    }catch(err){if(err.name==="AbortError")return;hide();status("Address search is temporarily unavailable. Manual entry still works.","warn");console.warn("Address autocomplete",err)}
   }
-  function render(results){const host=byId("siteAddressSuggestions");if(!host)return;host.innerHTML=results.map((r,i)=>`<button type="button" class="address-suggestion" role="option" data-index="${i}"><strong>${esc(r.address_line1||r.name||r.formatted||"Address")}</strong><small>${esc(r.address_line2||r.formatted||"")}</small></button>`).join("");host.classList.toggle("show",results.length>0);host.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>select(Number(btn.dataset.index))))}
+  function confidenceValue(r){const values=[r?.rank?.confidence,r?.rank?.match_type==='full_match'?1:null,r?.confidence];for(const value of values){const n=Number(value);if(Number.isFinite(n))return n}return 0}
+  function normalise(v){return String(v||"").toLowerCase().replace(/\baustralia\b|\btasmania\b|\btas\b/g,"").replace(/[^a-z0-9]+/g," ").trim()}
+  function isVeryHighConfidence(r,q){
+    const confidence=confidenceValue(r),typed=normalise(q),result=normalise(r.formatted||r.address_line1||"");
+    const hasStreetNumber=Boolean(r.housenumber&&r.street),exactEnough=typed.length>=8&&(result.startsWith(typed)||typed.startsWith(normalise(r.address_line1||"")));
+    return hasStreetNumber&&exactEnough&&confidence>=0.995;
+  }
+  function render(){
+    const host=byId("siteAddressSuggestions");if(!host)return;
+    const visible=expanded?activeResults:activeResults.slice(0,1);
+    host.innerHTML=visible.map((r,i)=>`<button type="button" class="address-suggestion" role="option" data-index="${i}"><strong>${esc(r.address_line1||r.name||r.formatted||"Address")}</strong><small>${esc(r.address_line2||r.formatted||"")}</small></button>`).join("")+(expanded?"":`<button type="button" class="address-more-button" id="showMoreAddressResults">Not the right address? Show more results</button>`);
+    host.classList.toggle("show",visible.length>0);
+    host.querySelectorAll(".address-suggestion").forEach(btn=>btn.addEventListener("click",()=>select(Number(btn.dataset.index),false)));
+    byId("showMoreAddressResults")?.addEventListener("click",()=>search(currentQuery,EXPANDED_LIMIT));
+  }
   function textBlob(r){return [r.name,r.address_line1,r.address_line2,r.formatted,r.result_type,r.category,Array.isArray(r.categories)?r.categories.join(" "):""].filter(Boolean).join(" ").toLowerCase()}
   function classify(r){
     const t=textBlob(r);
@@ -3665,13 +3686,29 @@ const AddressAssist = (()=>{
     if(r.result_type==="building"&&r.housenumber&&r.street)return {label:"House",confidence:"low"};
     return null;
   }
-  function select(i){const r=activeResults[i];if(!r)return;const address=r.formatted||[r.housenumber,r.street,r.city,r.postcode,"TAS"].filter(Boolean).join(", ");const el=input();if(el){el.value=address;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))}
-    const lat=Number(r.lat),lon=Number(r.lon);if(Number.isFinite(lat)&&Number.isFinite(lon)){const aLat=byId("arrivalLatitude"),aLon=byId("arrivalLongitude");if(aLat&&!aLat.value)aLat.value=lat.toFixed(7);if(aLon&&!aLon.value)aLon.value=lon.toFixed(7)}
-    const detected=classify(r),pt=typeInput();if(detected&&pt){const current=(pt.value||"").trim();if(!current||pt.dataset.autoDetected==="1"){pt.value=detected.label;pt.dataset.autoDetected="1";pt.dispatchEvent(new Event("input",{bubbles:true}));pt.dispatchEvent(new Event("change",{bubbles:true}));status(`Address selected. Property / Site Type set to ${detected.label}${detected.confidence==="low"?" (best estimate — please confirm)":""}.`,detected.confidence==="low"?"warn":"ok")}else status(`Address selected. Existing Property / Site Type kept as ${current}.`,"ok")}else status("Address selected. Property / Site Type could not be determined confidently; please select it manually.","warn");hide();
+  function select(i,automatic=false){
+    const r=activeResults[i];if(!r)return;selectionInProgress=true;
+    const address=r.formatted||[r.housenumber,r.street,r.city,r.postcode,"TAS"].filter(Boolean).join(", ");
+    const el=input();if(el){el.value=address;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))}
+    const lat=Number(r.lat),lon=Number(r.lon);if(Number.isFinite(lat)&&Number.isFinite(lon)){const aLat=byId("arrivalLatitude"),aLon=byId("arrivalLongitude");if(aLat)aLat.value=lat.toFixed(7);if(aLon)aLon.value=lon.toFixed(7);aLat?.dispatchEvent(new Event("change",{bubbles:true}));aLon?.dispatchEvent(new Event("change",{bubbles:true}))}
+    const detected=classify(r),pt=typeInput();let propertyMessage="Property / Site Type requires manual confirmation.";
+    if(detected&&pt){const current=(pt.value||"").trim();if(!current||pt.dataset.autoDetected==="1"){pt.value=detected.label;pt.dataset.autoDetected="1";pt.dispatchEvent(new Event("input",{bubbles:true}));pt.dispatchEvent(new Event("change",{bubbles:true}));propertyMessage=`Property / Site Type set to ${detected.label}${detected.confidence==="low"?" (best estimate — please confirm)":""}.`}else propertyMessage=`Existing Property / Site Type kept as ${current}.`}
+    if(window.PipeMaterialAssist?.render)window.PipeMaterialAssist.render();
+    hide();
+    status(`✓ Address verified${automatic?" automatically":""}. GPS coordinates filled. ${propertyMessage} Likely pipe materials updated.`,detected?.confidence==="low"?"warn":"ok");
+    setTimeout(()=>{selectionInProgress=false},0);
   }
-  function saveApiKey(){const field=byId("geoapifyApiKey"),value=(field?.value||"").trim();if(!value){configStatus("Enter a Geoapify API key before saving.","warn");return}try{localStorage.setItem(KEY_STORAGE,value);configStatus("Address suggestions enabled on this browser.","ok");status("Tasmania address suggestions are ready.","ok")}catch{configStatus("The API key could not be stored on this browser.","bad")}}
-  function clearApiKey(){try{localStorage.removeItem(KEY_STORAGE)}catch{}const field=byId("geoapifyApiKey");if(field)field.value="";configStatus("Address suggestions disabled. Manual entry remains available.","warn");status("");hide()}
-  function init(){const el=input();if(!el)return;el.addEventListener("input",()=>{if(typeInput()&&typeInput().dataset.autoDetected==="1"&&document.activeElement===el){}debounceSearch()});el.addEventListener("keydown",e=>{if(e.key==="Escape")hide()});document.addEventListener("click",e=>{if(!e.target.closest(".address-autocomplete-field"))hide()});window.addEventListener("offline",()=>{hide();status("Offline — enter the address manually.","warn")});const field=byId("geoapifyApiKey");if(field)field.value=key();configStatus(key()?"Address suggestions are configured on this browser.":"No API key configured. Manual address entry remains available.",key()?"ok":"warn")}
+  function saveApiKey(){const field=byId("geoapifyApiKey"),value=(field?.value||"").trim();if(!value){configStatus("Enter a Geoapify API key before saving.","warn");return}try{localStorage.setItem(KEY_STORAGE,value);configStatus("Address search enabled on this browser.","ok");status("Tasmania address search is ready.","ok")}catch{configStatus("The API key could not be stored on this browser.","bad")}}
+  function clearApiKey(){try{localStorage.removeItem(KEY_STORAGE)}catch{}const field=byId("geoapifyApiKey");if(field)field.value="";configStatus("Address search disabled. Manual entry remains available.","warn");status("");hide()}
+  function init(){
+    const el=input();if(!el)return;
+    el.addEventListener("input",debounceSearch);
+    el.addEventListener("keydown",e=>{if(e.key==="Escape")hide();else if(e.key==="Enter"&&activeResults.length){e.preventDefault();select(0,false)}});
+    document.addEventListener("click",e=>{if(!e.target.closest(".address-autocomplete-field"))hide()});
+    window.addEventListener("offline",()=>{hide();status("Offline — enter the address manually.","warn")});
+    const field=byId("geoapifyApiKey");if(field)field.value=key();
+    configStatus(key()?"Address search is configured on this browser.":"No API key configured. Manual address entry remains available.",key()?"ok":"warn");
+  }
   return {init,saveApiKey,clearApiKey};
 })();
 window.addEventListener("DOMContentLoaded",AddressAssist.init);
@@ -3747,7 +3784,7 @@ const DeviceHealth = (()=>{
 })();
 
 
-const PipeMaterialAssist=(()=>{
+window.PipeMaterialAssist=(()=>{
   const BASE=[
     "N/A","Unknown","PVC / uPVC","Poly (PE / HDPE)","Copper",
     "Galvanised Iron (GI)","Cast Iron","Ductile Iron (DI)",
