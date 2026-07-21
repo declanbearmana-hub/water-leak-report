@@ -2179,6 +2179,32 @@ function buildProfessionalPrintDocument(){
   const source = document.getElementById("report");
   const clone = source.cloneNode(true);
 
+  // cloneNode copies the original HTML attributes, but it may not preserve the
+  // operator's current live form selections. Synchronise every form control
+  // before converting the cloned report into printable text.
+  const sourceControls = source.querySelectorAll("input,select,textarea");
+  const clonedControls = clone.querySelectorAll("input,select,textarea");
+  sourceControls.forEach((sourceControl,index)=>{
+    const clonedControl = clonedControls[index];
+    if(!clonedControl) return;
+
+    if(sourceControl instanceof HTMLInputElement){
+      clonedControl.value = sourceControl.value;
+      if(sourceControl.type === "checkbox" || sourceControl.type === "radio"){
+        clonedControl.checked = sourceControl.checked;
+      }
+    }else if(sourceControl instanceof HTMLSelectElement){
+      clonedControl.value = sourceControl.value;
+      clonedControl.selectedIndex = sourceControl.selectedIndex;
+      Array.from(clonedControl.options).forEach((option,optionIndex)=>{
+        option.selected = sourceControl.options[optionIndex]?.selected || false;
+      });
+    }else if(sourceControl instanceof HTMLTextAreaElement){
+      clonedControl.value = sourceControl.value;
+      clonedControl.textContent = sourceControl.value;
+    }
+  });
+
   clone.querySelectorAll(".no-print,button,input[type=file]").forEach(el=>el.remove());
 
   clone.querySelectorAll("input").forEach(input=>{
