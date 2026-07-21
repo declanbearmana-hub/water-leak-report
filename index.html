@@ -2329,7 +2329,7 @@ ${clone.outerHTML}
 </html>`;
 }
 
-function preparePrint(){
+async function preparePrint(){
   autoGrowTextareas();
   setReportNumber(document.getElementById("reportNo").value);
   updateGeneratedDocumentName();
@@ -2368,6 +2368,28 @@ function preparePrint(){
     document.head.appendChild(printStyle);
     document.body.appendChild(printHost);
     document.body.classList.add("print-engine-active");
+
+    // Wait for every image in the printable copy, including the technician's
+    // signature converted from the canvas, before opening the print dialog.
+    // Without this wait some browsers print before the data-image has decoded.
+    const printableImages = Array.from(printHost.querySelectorAll("img"));
+    await Promise.all(printableImages.map(image=>{
+      if(image.complete && image.naturalWidth > 0) return Promise.resolve();
+      if(typeof image.decode === "function"){
+        return image.decode().catch(()=>new Promise(resolve=>{
+          image.addEventListener("load",resolve,{once:true});
+          image.addEventListener("error",resolve,{once:true});
+        }));
+      }
+      return new Promise(resolve=>{
+        image.addEventListener("load",resolve,{once:true});
+        image.addEventListener("error",resolve,{once:true});
+      });
+    }));
+
+    // Give the browser one rendered frame after decoding so canvas-derived
+    // images are committed to the print layout before window.print().
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 
     const originalTitle = document.title;
     document.title = generatedName;
