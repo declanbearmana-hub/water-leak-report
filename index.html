@@ -830,6 +830,29 @@ function getSiteMapSnapTarget(latlng,maxPixels=30){
   });
   return best;
 }
+function updateUtilityLinesAttachedToSymbol(symbolId){
+  const marker=siteMapSymbolRegistry.get(symbolId);
+  if(!marker)return;
+  const symbolLatLng=marker.getLatLng();
+  siteMapObjectRegistry.forEach(layer=>{
+    const meta=layer?._ausObjectMeta;
+    if(!meta?.isUtilityLine||!Array.isArray(meta.attachedSymbolIds)||!layer.setLatLngs)return;
+    const points=flattenLatLngs(layer.getLatLngs(),[]).map(point=>L.latLng(point));
+    let changed=false;
+    meta.attachedSymbolIds.forEach((attachedId,index)=>{
+      if(attachedId===symbolId&&points[index]){points[index]=L.latLng(symbolLatLng);changed=true;}
+    });
+    if(changed){layer.setLatLngs(points);meta.baseGeometry=captureSiteMapGeometry(layer);layer.redraw?.();}
+  });
+  updateAllSiteMapLabelConnectors();
+}
+function detachUtilityLinesFromSymbol(symbolId){
+  siteMapObjectRegistry.forEach(layer=>{
+    const meta=layer?._ausObjectMeta;
+    if(!meta?.isUtilityLine||!Array.isArray(meta.attachedSymbolIds))return;
+    meta.attachedSymbolIds=meta.attachedSymbolIds.map(id=>id===symbolId?null:id);
+  });
+}
 function addSiteMapDrawingPoint(latlng,attachmentId=null){
   if(!siteMap||siteMapMode!=="draw"||!(siteMapDrawingTool==="line"||siteMapDrawingTool==="polygon"))return false;
   const marker=attachmentId?siteMapSymbolRegistry.get(attachmentId):null;
@@ -899,7 +922,8 @@ function getSiteMapUtilityInfo(colour){return siteMapUtilityTypes[normaliseSiteM
 function getSiteMapLayerColour(layer){if(layer?.options?.color)return normaliseSiteMapColour(layer.options.color);let colour="";layer?.eachLayer?.(child=>{if(!colour&&child?.options?.color)colour=normaliseSiteMapColour(child.options.color);});return colour||normaliseSiteMapColour(siteMapColour);}
 function registerEditableSiteMapLayer(layer,name,parts){
   const isUtilityLine=name==="Utility line",colour=getSiteMapLayerColour(layer),utility=getSiteMapUtilityInfo(colour);
-  const id=`map-object-${++siteMapObjectCounter}`,meta={id,name:isUtilityLine?utility.label:(name||"Map item"),size:100,rotation:0,strokeWidth:siteMapLineWidth,parts:parts||null,moveEnabled:false,isFreehand:["Pen","Marker","Highlighter"].includes(name),isUtilityLine,isMeasurement:name==="Measurement",utilityType:isUtilityLine?utility.type:"",colour,autoUtilityName:isUtilityLine};
+  const attachedSymbolIds=isUtilityLine&&Array.isArray(layer._ausAttachedSymbolIds)?[...layer._ausAttachedSymbolIds]:[];
+  const id=`map-object-${++siteMapObjectCounter}`,meta={id,name:isUtilityLine?utility.label:(name||"Map item"),size:100,rotation:0,strokeWidth:siteMapLineWidth,parts:parts||null,moveEnabled:false,isFreehand:["Pen","Marker","Highlighter"].includes(name),isUtilityLine,isMeasurement:name==="Measurement",utilityType:isUtilityLine?utility.type:"",colour,autoUtilityName:isUtilityLine,attachedSymbolIds};
   layer._ausObjectMeta=meta;if(layer.eachLayer)layer.eachLayer(l=>l._ausObjectMeta=meta);
   const bind=l=>{
     if(!l.on)return;
@@ -1284,22 +1308,34 @@ function addSiteMapSymbol(symbolKey,latlng){
   if(!item||!siteMap)return;
   const id=`map-symbol-${++siteMapSymbolCounter}`;
   const meta={id,symbolKey,icon:item.icon,name:item.label,size:34,rotation:0};
-  const marker=L.marker(latlng,{draggable:true,icon:buildSiteMapSymbolIcon(meta)}).addTo(siteMap);
+  const marker=L.marker(latlng,{draggable:true,bubblingMouseEvents:false,riseOnHover:true,icon:buildSiteMapSymbolIcon(meta)}).addTo(siteMap);
   marker._ausSymbolMeta=meta;
   siteMapSymbolRegistry.set(id,marker);
   marker.bindPopup("",{closeButton:true,autoPan:true,offset:[0,-Math.round(meta.size/2)]});
   marker.on("mouseover",()=>marker.getElement()?.classList.add("symbol-hover"));
   marker.on("mouseout",()=>marker.getElement()?.classList.remove("symbol-hover"));
-  marker.on("click",event=>{L.DomEvent.stopPropagation(event);if(siteMapMode==="draw"&&(siteMapDrawingTool==="line"||siteMapDrawingTool==="polygon")){addSiteMapDrawingPoint(marker.getLatLng(),id);return;}openSiteMapSymbolMenu(id);});
+  marker.on("click",event=>{
+    if(event?.originalEvent){L.DomEvent.preventDefault(event.originalEvent);L.DomEvent.stopPropagation(event.originalEvent);}
+    L.DomEvent.stopPropagation(event);
+    // Only use a symbol as a snap/attachment point when a utility line is
+    // already being drawn. When no line is in progress, tapping the symbol
+    // must always open its normal edit controls (resize, rotate, rename,
+    // label and delete), even if the Utility tool remains selected.
+    if(siteMapMode==="draw"&&(siteMapDrawingTool==="line"||siteMapDrawingTool==="polygon")&&siteMapDraftPoints.length>0){
+      addSiteMapDrawingPoint(marker.getLatLng(),id);
+      return;
+    }
+    openSiteMapSymbolMenu(id);
+  });
   marker.on("popupclose",()=>{
     marker.getElement()?.classList.remove("symbol-selected");
     if(siteMapSelectedAttachmentId===id)siteMapSelectedAttachmentId=null;
   });
   marker.on("dragstart",()=>{marker.closePopup();marker.getElement()?.classList.add("symbol-selected");marker._ausDragStartLatLng=marker.getLatLng();marker._ausAttachedLabelStarts=getLabelsAttachedToSiteMapTarget(id).map(x=>({id:x.id,latlng:x.marker.getLatLng()}));showSiteMapStatus(`Moving ${meta.name}. Release it at the required position.`);});
-  marker.on("drag",()=>{shiftAttachedSiteMapLabels(id,marker._ausAttachedLabelStarts,marker._ausDragStartLatLng,marker.getLatLng());updateAllSiteMapLabelConnectors();});marker.on("dragend",()=>{marker.getElement()?.classList.remove("symbol-selected");shiftAttachedSiteMapLabels(id,marker._ausAttachedLabelStarts,marker._ausDragStartLatLng,marker.getLatLng());marker._ausDragStartLatLng=null;marker._ausAttachedLabelStarts=null;updateAllSiteMapLabelConnectors();showSiteMapStatus(`${meta.name} and its attached label moved. Click it for resize or rename options.`);});
+  marker.on("drag",()=>{shiftAttachedSiteMapLabels(id,marker._ausAttachedLabelStarts,marker._ausDragStartLatLng,marker.getLatLng());updateUtilityLinesAttachedToSymbol(id);updateAllSiteMapLabelConnectors();});marker.on("dragend",()=>{marker.getElement()?.classList.remove("symbol-selected");shiftAttachedSiteMapLabels(id,marker._ausAttachedLabelStarts,marker._ausDragStartLatLng,marker.getLatLng());updateUtilityLinesAttachedToSymbol(id);marker._ausDragStartLatLng=null;marker._ausAttachedLabelStarts=null;updateAllSiteMapLabelConnectors();showSiteMapStatus(`${meta.name}, its attached utility lines and its attached label moved together.`);});
   marker.on("remove",()=>siteMapSymbolRegistry.delete(id));
   registerSiteMapLayer(marker);
-  showSiteMapStatus(`${item.label} placed. Click and hold to drag it, or click once for resize and rename options. Undo removes the most recently placed symbol.`);
+  showSiteMapStatus(`${item.label} placed. Tap once for resize, rotate, rename, label and delete controls, or press and drag to move it. While a utility line is already in progress, tapping the symbol attaches the line to it.`);
 }
 function openSiteMapSymbolMenu(id){
   siteMapSelectedAttachmentId=id;
@@ -1374,11 +1410,12 @@ function renameSiteMapSymbol(id,value){
 }
 function removeSiteMapSymbol(id){
   const marker=siteMapSymbolRegistry.get(id);if(!marker||!siteMap)return;
+  detachUtilityLinesFromSymbol(id);
   removeLabelsAttachedToSiteMapTarget(id);marker.closePopup();siteMap.removeLayer(marker);
   siteMapMarkup=siteMapMarkup.filter(item=>item!==marker);
   siteMapActionHistory=siteMapActionHistory.filter(item=>item!==marker);
   siteMapSymbolRegistry.delete(id);
-  showSiteMapStatus("Symbol removed.");
+  showSiteMapStatus("Symbol removed. Connected utility lines remain in place and can still be selected or deleted separately.");
 }
 function undoSiteMapAction(){if(!siteMap)return;if(siteMapDraftPoints.length){siteMapDraftPoints.pop();if(siteMapDraftLine)siteMapDraftLine.setLatLngs(siteMapDraftPoints);if(!siteMapDraftPoints.length)cancelSiteMapDraftLine();return;}const layer=siteMapActionHistory.pop();if(layer){for(const [id,obj] of siteMapObjectRegistry.entries())if(obj===layer){if(obj._ausLabelMeta)removeSiteMapLabelConnector(id);else removeLabelsAttachedToSiteMapTarget(id);siteMapObjectRegistry.delete(id);}for(const [id,obj] of siteMapSymbolRegistry.entries())if(obj===layer){removeLabelsAttachedToSiteMapTarget(id);siteMapSymbolRegistry.delete(id);}siteMap.removeLayer(layer);siteMapMarkup=siteMapMarkup.filter(item=>item!==layer);}}
 function clearSiteMapMarkup(){
