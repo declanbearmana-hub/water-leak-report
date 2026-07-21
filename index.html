@@ -2634,6 +2634,26 @@ document.getElementById("swmsAttachmentInput").addEventListener("change",event=>
 renderAttachmentLists();
 autoGrowTextareas();
 
+function removeMergeConflictMarkers(){
+  const markerPattern=/^(<{7}|={7}|>{7})(?:\s+.*)?$/;
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  const remove=[];
+  while(walker.nextNode()){
+    const node=walker.currentNode;
+    const lines=node.nodeValue.split(/\r?\n/);
+    const cleaned=lines.filter(line=>!markerPattern.test(line.trim())).join("\n");
+    if(cleaned!==node.nodeValue){
+      if(cleaned.trim()==="") remove.push(node); else node.nodeValue=cleaned;
+    }
+  }
+  remove.forEach(node=>node.remove());
+  document.querySelectorAll('textarea,input[type="text"]').forEach(control=>{
+    const cleaned=String(control.value||"").split(/\r?\n/).filter(line=>!markerPattern.test(line.trim())).join("\n");
+    if(cleaned!==control.value){ control.value=cleaned; if(control.tagName==="TEXTAREA") autoGrowTextarea(control); }
+  });
+}
+removeMergeConflictMarkers();
+
 document.getElementById("backupImport").addEventListener("change",event=>{
   importBackup(event.target.files[0]);
   event.target.value = "";
