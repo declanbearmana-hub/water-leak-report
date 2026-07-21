@@ -217,6 +217,20 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
 #siteMap.map-object-move-ready:active, #siteMap.map-object-move-ready:active *{cursor:grabbing!important;}
 
 .clear-markup-modal{position:fixed;inset:0;background:rgba(4,18,33,.68);display:none;align-items:center;justify-content:center;z-index:12000;padding:20px}.clear-markup-modal.show{display:flex}.clear-markup-dialog{width:min(430px,94vw);background:#fff;border:3px solid #f28c28;border-radius:14px;box-shadow:0 18px 55px rgba(0,0,0,.35);padding:24px;text-align:center}.clear-markup-dialog h3{margin:0 0 10px;color:#0b2745;font-size:22px}.clear-markup-dialog p{margin:0 0 22px;color:#344454;font-size:16px;line-height:1.45}.clear-markup-actions{display:flex;gap:12px;justify-content:center}.clear-markup-actions button{min-width:120px;padding:12px 22px;border:0;border-radius:8px;font-weight:800;font-size:16px;cursor:pointer}.clear-markup-yes{background:#c62828;color:#fff}.clear-markup-no{background:#e8eef4;color:#0b2745}.clear-markup-actions button:focus{outline:3px solid rgba(242,140,40,.45);outline-offset:2px}
+
+/* Professional expanding text fields and attachment management */
+textarea{overflow:hidden;box-sizing:border-box;transition:height .08s ease;}
+.attachment-panel{margin:10px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;padding:10px}
+.attachment-panel h3{margin:0 0 4px;color:var(--navy);font-size:15px}.attachment-help{margin:0 0 10px;color:#536474;font-size:12px;line-height:1.4}
+.attachment-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}.attachment-file-input{display:none}
+.attachment-list{display:grid;gap:8px}.attachment-empty{padding:14px;border:1px dashed #aebdca;border-radius:5px;text-align:center;color:#60778d;background:#fff}
+.attachment-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid #ccd7e0;border-radius:6px;background:#fff}
+.attachment-name{min-width:0}.attachment-name strong{display:block;overflow-wrap:anywhere;color:#0b2745}.attachment-name small{display:block;color:#60778d;margin-top:2px}
+.attachment-visibility{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;font-weight:700;color:#0b2745}.attachment-visibility select{width:auto;min-width:68px;padding:6px}
+.attachment-row-actions{display:flex;gap:6px}.attachment-row-actions button{padding:7px 9px;border:0;border-radius:4px;background:#0b2745;color:#fff;font-weight:700;cursor:pointer}.attachment-row-actions button.danger{background:#a52a2a}
+.attachment-print-card{margin:8px 10px;padding:8px;border:1px solid #ccd7e0;border-radius:4px;break-inside:avoid}.attachment-print-card strong{display:block;color:#0b2745}.attachment-print-card small{color:#60778d}.attachment-print-preview{display:block;max-width:100%;max-height:90mm;object-fit:contain;margin-top:7px;border:1px solid #ccd7e0}
+@media(max-width:700px){.attachment-row{grid-template-columns:1fr}.attachment-row-actions{justify-content:flex-start}.attachment-visibility{justify-content:flex-start}}
+@media print{textarea{height:auto!important;overflow:visible!important}.attachment-panel{margin:9px 10px}.attachment-actions,.attachment-row-actions,.attachment-visibility{display:none!important}}
 </style>
 </head>
 <body>
@@ -224,6 +238,7 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
 <div class="toolbar no-print">
   <button class="btn" type="button" onclick="startNewReport()">New Report</button>
   <button class="btn secondary" type="button" onclick="saveDraft()">Save Draft</button>
+  <button class="btn secondary" type="button" onclick="selectReportsFolder()">Set Reports Folder</button>
   <button class="btn secondary" type="button" onclick="loadDraft()">Load Draft</button>
   <button class="btn secondary" type="button" onclick="downloadBackup()">Download Backup</button>
   <label class="file-label">Import Backup<input id="backupImport" type="file" accept=".json,application/json"></label>
@@ -231,7 +246,7 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
 </div>
 
 <div class="statusbar no-print" id="statusbar">
-  Ready. Save Draft can store the report in a folder you choose on this device.
+  Ready. Select the Desktop Reports folder once, then Save Draft and Load Draft will return to it automatically.
 </div>
 
 <main class="report" id="report">
@@ -293,9 +308,8 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
     </section>
 
     <section class="section">
-      <h2 class="section-title">3. Reason for Attendance & Executive Summary</h2>
+      <h2 class="section-title">3. Reason for Attendance</h2>
       <div class="field"><label>Reason for Attendance</label><textarea name="reasonForAttendance"></textarea></div>
-      <div class="field spacer-top"><label>Executive Summary</label><textarea name="executiveSummary"></textarea></div>
     </section>
 
     <section class="section">
@@ -347,10 +361,6 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
           </select>
         </div>
         <div class="field"><label>Known / Suspected Pipe Material</label><input name="pipeMaterial" type="text"></div>
-        <div class="field">
-          <label>Overall Confidence</label>
-          <select name="overallConfidence"><option value=""></option><option>High</option><option>Medium</option><option>Low</option></select>
-        </div>
       </div>
       <div class="field spacer-top"><label>Investigation Limitations / Factors Affecting Results</label><textarea name="conditionLimitations"></textarea></div>
     </section>
@@ -379,7 +389,6 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
         </div>
         <div class="field"><label>Surface Marking Used</label><input name="surfaceMarking" type="text"></div>
       </div>
-      <div class="field spacer-top"><label>Leak Description / Assessment Notes</label><textarea name="leakDescription"></textarea></div>
     </section>
 
     <section class="section">
@@ -465,20 +474,42 @@ textarea{min-height:85px;resize:vertical;line-height:1.35}
       </div>
     </section>
 
+    <section class="section" id="attachmentsSection">
+      <h2 class="section-title">9. Attachments &amp; SWMS</h2>
+      <div class="attachment-panel">
+        <h3>Report Attachments</h3>
+        <p class="attachment-help">Add emails, PDFs, images, documents, spreadsheets and other supporting files. Set <strong>Client View</strong> individually. Files marked No remain stored in the Archers draft but are excluded from the client report.</p>
+        <div class="attachment-actions no-print">
+          <button class="btn" type="button" onclick="document.getElementById('generalAttachmentInput').click()">Add Attachments</button>
+          <input id="generalAttachmentInput" class="attachment-file-input" type="file" multiple accept="*/*">
+        </div>
+        <div id="generalAttachmentList" class="attachment-list"></div>
+      </div>
+      <div class="attachment-panel">
+        <h3>Safe Work Method Statement (SWMS)</h3>
+        <p class="attachment-help">Add the SWMS or related safety documents and choose whether each file is included for client viewing.</p>
+        <div class="attachment-actions no-print">
+          <button class="btn" type="button" onclick="document.getElementById('swmsAttachmentInput').click()">Add SWMS</button>
+          <input id="swmsAttachmentInput" class="attachment-file-input" type="file" multiple accept="*/*">
+        </div>
+        <div id="swmsAttachmentList" class="attachment-list"></div>
+      </div>
+    </section>
+
     <section class="section">
-      <h2 class="section-title">9. Photographic Evidence</h2>
+      <h2 class="section-title">10. Photographic Evidence</h2>
       <div id="photoGrid" class="photo-grid"></div>
     </section>
 
     <section class="section">
-      <h2 class="section-title">10. Conclusion & Recommendations</h2>
-      <div class="field"><label>Conclusion</label><textarea name="conclusion" style="min-height:130px"></textarea></div>
+      <h2 class="section-title">11. Conclusion & Recommended Action</h2>
+      <div class="field"><label>Conclusion / Assessment Summary</label><textarea name="conclusion" style="min-height:130px"></textarea></div>
       <div class="field spacer-top"><label>Recommended Next Action</label><textarea name="recommendations">Any physical confirmation, repair, alteration or replacement of plumbing infrastructure should be assessed and undertaken by an appropriately licensed plumber.</textarea></div>
     </section>
 
     <section class="section">
-      <h2 class="section-title">11. Limitations & Disclaimer</h2>
-      <textarea name="limitationsDisclaimer" style="min-height:210px">This investigation was completed using non-destructive investigation methods and reflects the conditions observed and information available at the time of attendance. Findings are based on professional interpretation and do not constitute physical confirmation of the precise location, depth, condition or cause of a leak.
+      <h2 class="section-title">12. Limitations & Disclaimer</h2>
+      <textarea name="limitationsDisclaimer" style="min-height:210px" readonly aria-readonly="true">This investigation was completed using non-destructive investigation methods and reflects the conditions observed and information available at the time of attendance. Findings are based on professional interpretation and do not constitute physical confirmation of the precise location, depth, condition or cause of a leak.
 
 Results may be affected by pipe material, pipe depth, ground conditions, ambient noise, access limitations, service congestion, electrical interference, incomplete or inaccurate asset records, weather conditions and other site-specific factors. A lack of detectable evidence during the investigation does not guarantee that a leak or defect is not present.
 
@@ -486,7 +517,7 @@ Archers Underground Services Pty Ltd is not a licensed plumbing contractor and d
     </section>
 
     <section class="section">
-      <h2 class="section-title">12. Technician Declaration</h2>
+      <h2 class="section-title">13. Technician Declaration</h2>
       <div class="grid2">
         <div>
           <div class="field"><label>Technician Name</label><input name="declarationTechnician" type="text"></div>
@@ -527,6 +558,9 @@ const signatureCanvas = document.getElementById("signatureCanvas");
 const signatureCtx = signatureCanvas.getContext("2d");
 let drawing = false;
 let signatureHasContent = false;
+let reportAttachments = [];
+let swmsAttachments = [];
+const MAX_ATTACHMENT_SIZE = 40 * 1024 * 1024;
 
 function setStatus(message){
   statusbar.textContent = message;
@@ -1826,6 +1860,8 @@ function collectData(){
     }
   });
   data.signature = signatureHasContent ? signatureCanvas.toDataURL("image/png") : "";
+  data.reportAttachments = reportAttachments;
+  data.swmsAttachments = swmsAttachments;
   data.savedAt = new Date().toISOString();
   return data;
 }
@@ -1847,6 +1883,10 @@ function applyData(data){
       el.value = data[key] ?? "";
     }
   });
+
+  reportAttachments = Array.isArray(data.reportAttachments) ? data.reportAttachments : [];
+  swmsAttachments = Array.isArray(data.swmsAttachments) ? data.swmsAttachments : [];
+  renderAttachmentLists();
 
   setReportNumber(data.reportNo || document.getElementById("reportNo").value || nextReportNumber());
 
@@ -1941,6 +1981,29 @@ async function writeDraftToFolder(folderHandle,data){
   return fileName;
 }
 
+async function selectReportsFolder(){
+  if(!("showDirectoryPicker" in window)){
+    alert("Direct folder access is not supported by this browser. Use Chrome or Edge and open the report from its normal website or downloaded HTML file.");
+    return null;
+  }
+  try{
+    const selected = await window.showDirectoryPicker({id:"archers-reports-root",mode:"readwrite",startIn:"desktop"});
+    let reportsFolder = selected;
+    if(String(selected.name||"").toLowerCase() !== "reports"){
+      reportsFolder = await selected.getDirectoryHandle("Reports",{create:true});
+    }
+    await rememberDraftFolderHandle(reportsFolder);
+    activeDraftFileHandle = null;
+    activeDraftFileName = "";
+    setStatus(`Reports folder selected: ${reportsFolder.name}. Drafts will save to and load from this folder.`);
+    return reportsFolder;
+  }catch(error){
+    if(error?.name === "AbortError") setStatus("Reports folder selection cancelled.");
+    else{ console.error(error); alert("The Reports folder could not be selected. Please try again in Chrome or Edge."); }
+    return null;
+  }
+}
+
 async function saveDraft(){
   const data = collectData();
 
@@ -1996,12 +2059,8 @@ async function saveDraft(){
     }
 
     if(!folderHandle || !hasPermission){
-      folderHandle = await window.showDirectoryPicker({
-        id:"archers-water-leak-drafts",
-        mode:"readwrite",
-        startIn:"documents"
-      });
-      await rememberDraftFolderHandle(folderHandle);
+      folderHandle = await selectReportsFolder();
+      if(!folderHandle) return;
     }
 
     const savedFileName = await writeDraftToFolder(folderHandle,data);
@@ -2195,6 +2254,9 @@ function importBackup(file){
 }
 
 function clearForm(){
+  reportAttachments = [];
+  swmsAttachments = [];
+  renderAttachmentLists();
   document.querySelectorAll("#report input,#report select,#report textarea").forEach(el=>{
     if(el.type === "checkbox" || el.type === "radio"){
       el.checked = false;
@@ -2270,12 +2332,61 @@ function startNewReport(){
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
-function autoGrowTextareas(){
-  document.querySelectorAll("textarea").forEach(area=>{
-    area.style.height = "auto";
-    area.style.height = Math.max(area.scrollHeight,85) + "px";
+function formatAttachmentSize(bytes){
+  const value=Number(bytes)||0;
+  if(value<1024) return `${value} B`;
+  if(value<1024*1024) return `${(value/1024).toFixed(1)} KB`;
+  return `${(value/(1024*1024)).toFixed(1)} MB`;
+}
+
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(reader.error||new Error("File could not be read"));
+    reader.readAsDataURL(file);
   });
 }
+
+async function addAttachmentFiles(kind,fileList){
+  const target=kind==="swms"?swmsAttachments:reportAttachments;
+  const files=Array.from(fileList||[]);
+  for(const file of files){
+    if(file.size>MAX_ATTACHMENT_SIZE){
+      alert(`${file.name} is larger than 40 MB and was not added.`);
+      continue;
+    }
+    try{
+      target.push({id:`att-${Date.now()}-${Math.random().toString(36).slice(2)}`,name:file.name,type:file.type||"application/octet-stream",size:file.size,lastModified:file.lastModified||Date.now(),clientView:true,dataUrl:await fileToDataUrl(file)});
+    }catch(error){
+      console.error(error);
+      alert(`${file.name} could not be added.`);
+    }
+  }
+  renderAttachmentLists();
+  setStatus(`${files.length} attachment${files.length===1?"":"s"} processed.`);
+}
+
+function attachmentArray(kind){return kind==="swms"?swmsAttachments:reportAttachments;}
+function setAttachmentClientView(kind,id,value){const item=attachmentArray(kind).find(x=>x.id===id);if(item)item.clientView=value==="yes";renderAttachmentLists();}
+function removeAttachment(kind,id){const list=attachmentArray(kind),index=list.findIndex(x=>x.id===id);if(index>=0&&confirm(`Remove ${list[index].name}?`)){list.splice(index,1);renderAttachmentLists();}}
+function openAttachment(kind,id){const item=attachmentArray(kind).find(x=>x.id===id);if(!item)return;const link=document.createElement("a");link.href=item.dataUrl;link.download=item.name;link.target="_blank";document.body.appendChild(link);link.click();link.remove();}
+
+function renderAttachmentList(kind){
+  const list=attachmentArray(kind),container=document.getElementById(kind==="swms"?"swmsAttachmentList":"generalAttachmentList");
+  if(!container)return;
+  if(!list.length){container.innerHTML='<div class="attachment-empty">No files added.</div>';return;}
+  container.innerHTML=list.map(item=>`<div class="attachment-row" data-attachment-kind="${kind}" data-attachment-id="${item.id}" data-client-view="${item.clientView!==false?"yes":"no"}"><div class="attachment-name"><strong>${escapePrintHtml(item.name)}</strong><small>${escapePrintHtml(item.type||"Unknown file type")} · ${formatAttachmentSize(item.size)}</small></div><label class="attachment-visibility">Client View <select onchange="setAttachmentClientView('${kind}','${item.id}',this.value)"><option value="yes" ${item.clientView!==false?"selected":""}>YES</option><option value="no" ${item.clientView===false?"selected":""}>NO</option></select></label><div class="attachment-row-actions no-print"><button type="button" onclick="openAttachment('${kind}','${item.id}')">View / Save</button><button class="danger" type="button" onclick="removeAttachment('${kind}','${item.id}')">Remove</button></div></div>`).join("");
+}
+function renderAttachmentLists(){renderAttachmentList("general");renderAttachmentList("swms");}
+
+function growTextarea(area){
+  if(!area) return;
+  area.style.height = "0px";
+  area.style.height = Math.max(area.scrollHeight + 2,85) + "px";
+}
+function autoGrowTextareas(){ document.querySelectorAll("textarea").forEach(growTextarea); }
+document.addEventListener("input",event=>{ if(event.target instanceof HTMLTextAreaElement) growTextarea(event.target); });
 
 function printableText(value){
   const text = String(value || "").trim();
@@ -2320,6 +2431,17 @@ function buildProfessionalPrintDocument(){
       clonedControl.textContent = sourceControl.value;
     }
   });
+
+  // Client PDF: exclude private attachments and turn visible files into clear records.
+  clone.querySelectorAll(".attachment-row").forEach(row=>{
+    if(row.dataset.clientView === "no"){ row.remove(); return; }
+    const kind=row.dataset.attachmentKind||"general",id=row.dataset.attachmentId;
+    const item=attachmentArray(kind).find(entry=>entry.id===id);
+    if(!item) return;
+    row.className="attachment-print-card";
+    row.innerHTML=`<strong>${escapePrintHtml(item.name)}</strong><small>${escapePrintHtml(item.type||"File")} · ${formatAttachmentSize(item.size)}</small>${String(item.type||"").startsWith("image/")?`<img class="attachment-print-preview" src="${item.dataUrl}" alt="${escapePrintHtml(item.name)}">`:"<div style=\"margin-top:5px\">Attached supporting document supplied with the digital report.</div>"}`;
+  });
+  clone.querySelectorAll(".attachment-empty").forEach(empty=>{ if(!empty.parentElement?.querySelector(".attachment-row,.attachment-print-card")) empty.textContent="No client-visible files included."; });
 
   clone.querySelectorAll(".no-print,button,input[type=file]").forEach(el=>el.remove());
 
@@ -2476,131 +2598,42 @@ ${clone.outerHTML}
 </html>`;
 }
 
-async function preparePrint(){
+function preparePrint(){
   autoGrowTextareas();
   setReportNumber(document.getElementById("reportNo").value);
   updateGeneratedDocumentName();
-  const generatedName = generatedReportFileName();
-  setStatus(`Preparing professional PDF layout. When saving as PDF, the suggested file name is: ${generatedName}.pdf`);
-
-  const existingHost = document.getElementById("professionalPrintHost");
-  if(existingHost) existingHost.remove();
-  const existingStyle = document.getElementById("professionalPrintStyles");
-  if(existingStyle) existingStyle.remove();
-
+  const generatedName=generatedReportFileName();
+  setStatus(`Opening the standard Print / Save PDF window. Suggested file name: ${generatedName}.pdf`);
+  const oldHost=document.getElementById("professionalPrintHost"); if(oldHost)oldHost.remove();
+  const oldStyle=document.getElementById("professionalPrintStyles"); if(oldStyle)oldStyle.remove();
   try{
-    const printDocument = new DOMParser().parseFromString(buildProfessionalPrintDocument(), "text/html");
-
-    const printStyle = document.createElement("style");
-    printStyle.id = "professionalPrintStyles";
-    printStyle.textContent = Array.from(printDocument.querySelectorAll("head style"))
-      .map(style => style.textContent)
-      .join("\n") + `
-@media screen{
-  #professionalPrintHost{display:none!important}
-}
-@media print{
-  body.print-engine-active > *:not(#professionalPrintHost):not(#professionalPrintStyles){display:none!important}
-  body.print-engine-active #professionalPrintHost{display:block!important;position:static!important;width:100%!important;margin:0!important;padding:0!important}
-}`;
-
-    const printHost = document.createElement("div");
-    printHost.id = "professionalPrintHost";
-    printHost.setAttribute("aria-hidden", "true");
-
-    Array.from(printDocument.body.childNodes).forEach(node=>{
-      if(node.nodeName !== "SCRIPT") printHost.appendChild(document.importNode(node,true));
-    });
-
-    document.head.appendChild(printStyle);
-    document.body.appendChild(printHost);
-    document.body.classList.add("print-engine-active");
-
-    // Wait for every image in the printable copy, including the technician's
-    // signature converted from the canvas, before opening the print dialog.
-    // Without this wait some browsers print before the data-image has decoded.
-    const printableImages = Array.from(printHost.querySelectorAll("img"));
-    await Promise.all(printableImages.map(image=>{
-      if(image.complete && image.naturalWidth > 0) return Promise.resolve();
-      if(typeof image.decode === "function"){
-        return image.decode().catch(()=>new Promise(resolve=>{
-          image.addEventListener("load",resolve,{once:true});
-          image.addEventListener("error",resolve,{once:true});
-        }));
-      }
-      return new Promise(resolve=>{
-        image.addEventListener("load",resolve,{once:true});
-        image.addEventListener("error",resolve,{once:true});
-      });
-    }));
-
-    // Give the browser one rendered frame after decoding so canvas-derived
-    // images are committed to the print layout before window.print().
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-
-    const originalTitle = document.title;
-    document.title = generatedName;
-
-    let cleanedUp = false;
-    const cleanup = function(){
-      if(cleanedUp) return;
-      cleanedUp = true;
-      document.body.classList.remove("print-engine-active");
-      document.title = originalTitle;
-      if(printHost.parentNode) printHost.remove();
-      if(printStyle.parentNode) printStyle.remove();
-    };
-
-    let printStarted = false;
-    const printMedia = window.matchMedia ? window.matchMedia("print") : null;
-    const markPrintStarted = function(event){
-      if(!event || event.matches) printStarted = true;
-    };
-    if(printMedia){
-      if(printMedia.addEventListener) printMedia.addEventListener("change",markPrintStarted);
-      else if(printMedia.addListener) printMedia.addListener(markPrintStarted);
-    }
-
-    window.addEventListener("beforeprint",function(){ printStarted = true; },{once:true});
-    window.addEventListener("afterprint",function(){
-      printStarted = true;
-      cleanup();
-      setStatus("Print dialog closed. Your report remains ready to edit or save again.");
-    },{once:true});
-
-    /* Print the currently open document. This works when the downloaded HTML file is
-       opened directly in Safari, Chrome, Edge or Firefox. Embedded file-preview windows
-       may block the device print dialog for security reasons. */
-    window.focus();
-    window.print();
-
-    setTimeout(function(){
-      if(printMedia){
-        if(printMedia.removeEventListener) printMedia.removeEventListener("change",markPrintStarted);
-        else if(printMedia.removeListener) printMedia.removeListener(markPrintStarted);
-      }
-      if(!printStarted){
-        cleanup();
-        setStatus("This file preview has blocked the print dialog. Download the HTML file, open it in your normal browser, then press Print / Save PDF again.");
-        alert("This preview window does not allow websites to open the device print dialog. Download this HTML file first, open the downloaded file in Chrome, Edge, Safari or Firefox, and then press Print / Save PDF. The normal Print or Save as PDF screen will open there.");
-      }
-    },1200);
-
-    /* Fallback cleanup for browsers that do not fire afterprint reliably. */
+    const printDocument=new DOMParser().parseFromString(buildProfessionalPrintDocument(),"text/html");
+    const style=document.createElement("style");style.id="professionalPrintStyles";
+    style.textContent=Array.from(printDocument.querySelectorAll("head style")).map(x=>x.textContent).join("\n")+`@media screen{#professionalPrintHost{display:none!important}}@media print{body.print-engine-active>*:not(#professionalPrintHost):not(#professionalPrintStyles){display:none!important}body.print-engine-active #professionalPrintHost{display:block!important;position:static!important;width:100%!important;margin:0!important;padding:0!important}}`;
+    const host=document.createElement("div");host.id="professionalPrintHost";host.setAttribute("aria-hidden","true");
+    Array.from(printDocument.body.childNodes).forEach(node=>{if(node.nodeName!=="SCRIPT")host.appendChild(document.importNode(node,true));});
+    document.head.appendChild(style);document.body.appendChild(host);document.body.classList.add("print-engine-active");
+    const originalTitle=document.title;document.title=generatedName;
+    let cleaned=false;const cleanup=()=>{if(cleaned)return;cleaned=true;document.body.classList.remove("print-engine-active");document.title=originalTitle;host.remove();style.remove();};
+    window.addEventListener("afterprint",()=>{cleanup();setStatus("Print dialog closed. The report remains ready to edit or save again.");},{once:true});
+    // Keep this synchronous with the button press so Chrome, Edge and Safari do not treat it as a blocked popup.
+    window.focus();window.print();
     setTimeout(cleanup,300000);
   }catch(error){
-    document.body.classList.remove("print-engine-active");
-    const failedHost = document.getElementById("professionalPrintHost");
-    const failedStyle = document.getElementById("professionalPrintStyles");
-    if(failedHost) failedHost.remove();
-    if(failedStyle) failedStyle.remove();
-    alert("The professional PDF layout could not be prepared. Please try again or use your browser's Print command.");
+    console.error(error);document.body.classList.remove("print-engine-active");
+    alert("The PDF layout could not be prepared. Press Ctrl+P (or Command+P on Mac) as a fallback.");
+    setStatus("PDF preparation failed. Browser Print remains available with Ctrl+P.");
   }
 }
 
 document.getElementById("siteImageInput").addEventListener("change",event=>{
   handleImageFile(event.target.files[0],"sitePreview","siteImageData");
 });
+document.getElementById("generalAttachmentInput").addEventListener("change",event=>{ addAttachmentFiles("general",event.target.files); event.target.value=""; });
+document.getElementById("swmsAttachmentInput").addEventListener("change",event=>{ addAttachmentFiles("swms",event.target.files); event.target.value=""; });
+renderAttachmentLists();
+autoGrowTextareas();
+
 document.getElementById("backupImport").addEventListener("change",event=>{
   importBackup(event.target.files[0]);
   event.target.value = "";
