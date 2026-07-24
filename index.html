@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <!-- CHANGE AI-3.16.8: Built-in Archers AI endpoint, connection monitor, risk assessment and technician assistant. -->
+<!-- CHANGE AI 1.0.1: Fixed report data collection for the non-form report container. -->
 <!-- CHANGE 3.14.7: Visible timer button timestamps and automatic stop on Ready for Review / Completed. -->
 <!-- CHANGE 3.14.6: Reusable equipment register, fixed technician equipment slots and embedded company-data export. -->
 <!-- BASELINE 3.14.4: Investigation Outcome remains near report end; workflow order follows DOM. -->
@@ -6152,8 +6153,22 @@ const AIReportWriting=(()=>{
     finally{clearTimeout(timeout);}
   }
   function reportObject(){
-    const form=document.getElementById("report");if(!form)return {};
-    const out={};new FormData(form).forEach((value,key)=>{if(value instanceof File)return;const text=String(value||"").trim();if(!text)return;if(out[key]===undefined)out[key]=text;else if(Array.isArray(out[key]))out[key].push(text);else out[key]=[out[key],text];});
+    const report=document.getElementById("report");if(!report)return {};
+    const out={};
+    report.querySelectorAll("input[name],select[name],textarea[name]").forEach(field=>{
+      if(field.disabled||field.type==="file")return;
+      if((field.type==="checkbox"||field.type==="radio")&&!field.checked)return;
+      const key=String(field.name||"").trim();if(!key)return;
+      const values=field instanceof HTMLSelectElement&&field.multiple
+        ? Array.from(field.selectedOptions).map(option=>option.value)
+        : [field.value];
+      values.forEach(value=>{
+        const text=String(value||"").trim();if(!text)return;
+        if(out[key]===undefined)out[key]=text;
+        else if(Array.isArray(out[key]))out[key].push(text);
+        else out[key]=[out[key],text];
+      });
+    });
     ["siteMapImage","siteMapState","signatureData","photoData","attachmentData","companyEmbeddedData","internalEquipmentChecks"].forEach(k=>delete out[k]);return out;
   }
   function reportText(){
