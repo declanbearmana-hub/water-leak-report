@@ -4295,16 +4295,71 @@ const StorageFoundation=(()=>{
   async function verifyWritable(root){const sys=await root.getDirectoryHandle("System",{create:true});const name=`.write-test-${Date.now()}.tmp`;await writeText(sys,name,"ok");await sys.removeEntry(name);return true;}
   function lock(message="A writable Archers Field System folder is required."){document.body.classList.add("storage-locked");const modal=document.getElementById("storageSetupModal"),status=document.getElementById("storageSetupStatus");modal?.classList.add("open");if(status)status.textContent=message;}
   function unlock(message){document.body.classList.remove("storage-locked");document.getElementById("storageSetupModal")?.classList.remove("open");if(message)setStatus(message);}
+  function resetActiveFolderCache(){activeJobDir=null;activeJobKey="";}
   async function connectReportsFolder(){
     if(!window.showDirectoryPicker){alert("This storage system requires current Chrome or Microsoft Edge.");return false;}
     const button=document.getElementById("connectReportsFolderButton");
-    try{if(button){button.disabled=true;button.textContent="Connecting…";}parentHandle=await window.showDirectoryPicker({id:"aus-wld-reports-parent",mode:"readwrite",startIn:"documents"});if(!await hasPermission(parentHandle,true))throw new Error("Read/write permission was not granted.");rootHandle=await ensureStructure(parentHandle);await verifyWritable(rootHandle);await saveHandle(parentHandle);await audit("STORAGE_CONNECTED",{folder:`${parentHandle.name}\\${ROOT_NAME}`});unlock(`System folder connected: ${parentHandle.name}\\${ROOT_NAME}`);await ensureCurrentJob();startAutosave();return true;}catch(e){if(e?.name!=="AbortError"){console.error(e);lock(`Storage connection failed: ${e.message||e}`);alert(`The system folder could not be connected.\n\n${e.message||e}`);}return false;}finally{if(button){button.disabled=false;button.textContent="Select System Folder";}}
+    try{
+      if(button){button.disabled=true;button.textContent="Connecting…";}
+      const selectedHandle=await window.showDirectoryPicker({id:"aus-wld-reports-parent",mode:"readwrite",startIn:"documents"});
+      if(!await hasPermission(selectedHandle,true))throw new Error("Read/write permission was not granted.");
+      parentHandle=selectedHandle;
+      rootHandle=null;
+      resetActiveFolderCache();
+      rootHandle=await ensureStructure(parentHandle);
+      await verifyWritable(rootHandle);
+      await saveHandle(parentHandle);
+      await audit("STORAGE_CONNECTED",{folder:`${parentHandle.name}\${ROOT_NAME}`});
+      unlock(`System folder connected: ${parentHandle.name}\${ROOT_NAME}`);
+      await ensureCurrentJob();
+      startAutosave();
+      initialised=true;
+      return true;
+    }catch(e){
+      if(e?.name!=="AbortError"){
+        console.error(e);
+        resetActiveFolderCache();
+        lock(`Storage connection failed: ${e.message||e}`);
+        alert(`The system folder could not be connected.
+
+${e.message||e}`);
+      }
+      return false;
+    }finally{if(button){button.disabled=false;button.textContent="Select System Folder";}}
   }
-  async function requireRoot(request=true){if(rootHandle&&await hasPermission(parentHandle,request))return rootHandle;if(!parentHandle)parentHandle=await loadHandle();if(parentHandle&&await hasPermission(parentHandle,request)){rootHandle=await ensureStructure(parentHandle);await verifyWritable(rootHandle);return rootHandle;}lock("Reports folder access is required before the application can continue.");throw new Error("Reports folder access has not been granted.");}
+  async function requireRoot(request=true){
+    if(rootHandle&&parentHandle&&await hasPermission(parentHandle,request))return rootHandle;
+    if(!parentHandle)parentHandle=await loadHandle();
+    if(parentHandle&&await hasPermission(parentHandle,request)){
+      rootHandle=await ensureStructure(parentHandle);
+      await verifyWritable(rootHandle);
+      return rootHandle;
+    }
+    rootHandle=null;
+    resetActiveFolderCache();
+    lock("Reports folder access is required before the application can continue.");
+    throw new Error("Reports folder access has not been granted.");
+  }
   function safe(v,f="Unnamed"){return String(v||f).trim().replace(/[<>:"/\\|?*\x00-\x1F]/g,"-").replace(/\s+/g," ").slice(0,90)||f;}
   function reportYear(data){return (String(data.reportDate||"").match(/\b(20\d{2})\b/)||[])[1]||String(new Date().getFullYear());}
   function keyFor(data){return `${safe(data.reportNo,"UNNUMBERED")}__${deviceId()}`;}
-  async function getJobDir(data,create=true){const root=await requireRoot(),active=await root.getDirectoryHandle("Active Reports",{create:true}),year=await active.getDirectoryHandle(reportYear(data),{create:true}),key=keyFor(data);if(activeJobDir&&activeJobKey===key)return activeJobDir;activeJobDir=await year.getDirectoryHandle(key,{create});activeJobKey=key;for(const n of ["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"])await activeJobDir.getDirectoryHandle(n,{create:true});await writeJson(activeJobDir,"folder-manifest.json",{schema:"AUS-WLD-REPORT-FOLDER",version:1,reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",jobKey:key,year:reportYear(data),status:data.reportStatus||"Draft",updatedAt:new Date().toISOString(),subfolders:["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"]});return activeJobDir;}
+  async function getJobDir(data,create=true){
+    const root=await requireRoot(),active=await root.getDirectoryHandle("Active Reports",{create:true}),year=await active.getDirectoryHandle(reportYear(data),{create:true}),key=keyFor(data);
+    if(activeJobDir&&activeJobKey===key){
+      try{
+        await activeJobDir.getDirectoryHandle("Audit",{create:true});
+        return activeJobDir;
+      }catch(error){
+        console.warn("Cached report folder is no longer available; rebuilding the folder handle.",error);
+        resetActiveFolderCache();
+      }
+    }
+    activeJobDir=await year.getDirectoryHandle(key,{create});
+    activeJobKey=key;
+    for(const n of ["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"])await activeJobDir.getDirectoryHandle(n,{create:true});
+    await writeJson(activeJobDir,"folder-manifest.json",{schema:"AUS-WLD-REPORT-FOLDER",version:1,reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",jobKey:key,year:reportYear(data),status:data.reportStatus||"Draft",updatedAt:new Date().toISOString(),subfolders:["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"]});
+    return activeJobDir;
+  }
   async function updateIndex(data,status="Active"){
     const root=await requireRoot(),db=await root.getDirectoryHandle("Database",{create:true}),idx=await readJson(db,INDEX_FILE,{schema:"AUS-WLD-REPORT-INDEX",version:1,reports:[]});
     const record={reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",reportDate:data.reportDate||"",status,deviceId:deviceId(),jobKey:keyFor(data),folderPath:`${["Completed","Issued","Archived"].includes(status)?"Completed Reports":"Active Reports"}/${reportYear(data)}/${keyFor(data)}`,updatedAt:new Date().toISOString()};
@@ -4313,7 +4368,7 @@ const StorageFoundation=(()=>{
   async function audit(action,details={}){try{const root=await requireRoot(false),sys=await root.getDirectoryHandle("System",{create:true}),log=await readJson(sys,AUDIT_FILE,{schema:"AUS-WLD-AUDIT",version:1,entries:[]});log.entries.push({id:crypto.randomUUID(),at:new Date().toISOString(),action,deviceId:deviceId(),reportNo:document.getElementById("reportNo")?.value||"",details});if(log.entries.length>10000)log.entries=log.entries.slice(-10000);await writeJson(sys,AUDIT_FILE,log);}catch(e){console.warn("Audit write failed",e);}}
   async function saveCurrent(reason="manual"){
     setSaveState("saving","Saving…");
-    return saveQueue=saveQueue.then(async()=>{try{const data=collectData(),dir=await getJobDir(data,true),savedAt=new Date().toISOString();data.storageRecord={schema:"AUS-WLD-JOB",version:2,status:data.reportStatus||"Draft",deviceId:deviceId(),jobKey:keyFor(data),savedAt,applicationVersion:APP_VERSION};await writeJson(dir,"report.json",data);await writeJson(dir,"autosave.json",data);const auditDir=await dir.getDirectoryHandle("Audit",{create:true});await writeJson(auditDir,"latest-save.json",{schema:"AUS-WLD-REPORT-SAVE",version:1,reportNo:data.reportNo||"",jobKey:keyFor(data),reason,savedAt,deviceId:deviceId(),applicationVersion:APP_VERSION});await updateIndex(data,data.reportStatus||"Draft");try{localStorage.setItem(APP_KEY,JSON.stringify(data));}catch(_){}await audit("REPORT_SAVED",{reason,savedAt});setStatus(`Report saved and verified: ${data.reportNo||"Current report"}`);setSaveState("saved",`Saved ${new Date(savedAt).toLocaleTimeString("en-AU")}`);return data;}catch(error){setSaveState("error","Not saved — storage unavailable");throw error;}});
+    return saveQueue=saveQueue.catch(()=>undefined).then(async()=>{try{const data=collectData(),dir=await getJobDir(data,true),savedAt=new Date().toISOString();data.storageRecord={schema:"AUS-WLD-JOB",version:2,status:data.reportStatus||"Draft",deviceId:deviceId(),jobKey:keyFor(data),savedAt,applicationVersion:APP_VERSION};await writeJson(dir,"report.json",data);await writeJson(dir,"autosave.json",data);const auditDir=await dir.getDirectoryHandle("Audit",{create:true});await writeJson(auditDir,"latest-save.json",{schema:"AUS-WLD-REPORT-SAVE",version:1,reportNo:data.reportNo||"",jobKey:keyFor(data),reason,savedAt,deviceId:deviceId(),applicationVersion:APP_VERSION});await updateIndex(data,data.reportStatus||"Draft");try{localStorage.setItem(APP_KEY,JSON.stringify(data));}catch(_){}await audit("REPORT_SAVED",{reason,savedAt});setStatus(`Report saved and verified: ${data.reportNo||"Current report"}`);setSaveState("saved",`Saved ${new Date(savedAt).toLocaleTimeString("en-AU")}`);return data;}catch(error){setSaveState("error","Not saved — storage unavailable");throw error;}});
   }
   async function ensureCurrentJob(){const data=collectData();await getJobDir(data,true);await saveCurrent("job-created");}
   function startAutosave(){if(autosaveTimer)clearInterval(autosaveTimer);let seconds=120;try{seconds=Number(JSON.parse(localStorage.getItem("archers_wld_workflow_settings_v367")||"{}").autosaveInterval)||120;}catch(_){}autosaveTimer=setInterval(()=>saveCurrent("automatic").catch(e=>{console.error(e);lock(`Automatic saving failed: ${e.message||e}`);}),Math.max(60,seconds)*1000);}
@@ -4345,7 +4400,33 @@ const StorageFoundation=(()=>{
   async function listReports(){const root=await requireRoot(false),db=await root.getDirectoryHandle("Database",{create:true}),idx=await readJson(db,INDEX_FILE,{schema:"AUS-WLD-REPORT-INDEX",version:1,reports:[]});return Array.isArray(idx.reports)?idx.reports.slice().sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||""))):[];}
   async function openIndexedReport(record){if(!record||record.status==="Deleted")throw new Error("Deleted reports cannot yet be opened from this dashboard.");const root=await requireRoot(),folderName=["Completed","Issued","Archived"].includes(record.status)?"Completed Reports":"Active Reports",base=await root.getDirectoryHandle(folderName),year=await base.getDirectoryHandle((String(record.reportDate||"").match(/\b(20\d{2})\b/)||[])[1]||String(new Date().getFullYear())),dir=await year.getDirectoryHandle(record.jobKey),data=await readJson(dir,"report.json",null);if(!data)throw new Error("The report file could not be read.");applyData(data);activeJobDir=dir;activeJobKey=record.jobKey;await audit("REPORT_OPENED",{jobKey:record.jobKey});setStatus(`Opened report: ${record.reportNo||record.jobKey}`);setSaveState("saved","Loaded from report database");return data;}
   async function storageHealth(){try{const root=await requireRoot(false);await verifyWritable(root);const reports=await listReports();return {ok:true,folder:`${parentHandle?.name||"Selected folder"}\\${ROOT_NAME}`,count:reports.length,deviceId:deviceId()};}catch(error){return {ok:false,error:error.message||String(error),deviceId:deviceId()};}}
-  async function initialise(){lock("Checking Archers Field System folder access…");try{parentHandle=await loadHandle();if(!parentHandle||!await hasPermission(parentHandle,false)){lock("Select the Archers Field System folder to continue.");setSaveState("error","Storage not connected");return;}rootHandle=await ensureStructure(parentHandle);await verifyWritable(rootHandle);unlock(`System folder available: ${parentHandle.name}\\${ROOT_NAME}`);await ensureCurrentJob();startAutosave();initialised=true;setSaveState("saved","Storage connected");setTimeout(()=>window.ReportManagerDashboard?.open(),150);}catch(e){console.error(e);setSaveState("error","Storage unavailable");lock(`System folder access is required: ${e.message||e}`);}}
+  async function initialise(){
+    lock("Checking Archers Field System folder access…");
+    try{
+      parentHandle=await loadHandle();
+      rootHandle=null;
+      resetActiveFolderCache();
+      if(!parentHandle||!await hasPermission(parentHandle,false)){
+        lock("Select the Archers Field System folder to continue.");
+        setSaveState("error","Storage not connected");
+        return;
+      }
+      rootHandle=await ensureStructure(parentHandle);
+      await verifyWritable(rootHandle);
+      unlock(`System folder available: ${parentHandle.name}\${ROOT_NAME}`);
+      await ensureCurrentJob();
+      startAutosave();
+      initialised=true;
+      setSaveState("saved","Storage connected");
+      setTimeout(()=>window.ReportManagerDashboard?.open(),150);
+    }catch(e){
+      console.error(e);
+      rootHandle=null;
+      resetActiveFolderCache();
+      setSaveState("error","Storage unavailable");
+      lock(`System folder access is required: ${e.message||e}`);
+    }
+  }
   return {connectReportsFolder,requireRoot,saveCurrent,saveAndStartNew,requestDeleteCurrentJob,deleteDraftReport,initialise,scheduleAutosave,deviceId,listReports,openIndexedReport,storageHealth,moveCurrentToCompleted,restartAutosave:startAutosave};
 })();
 window.StorageFoundation=StorageFoundation;
