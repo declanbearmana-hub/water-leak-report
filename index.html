@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <!-- CHANGE CLIENT-PDF-5: Professional client PDF, workflow removal, A4 pagination and typography refinement. -->
+<!-- CHANGE DIAGNOSTICS-5.1: Expose lexical modules to window for inline handlers and structural diagnostics. -->
 <!-- CHANGE AI-3.16.9: Scoped AI actions, direct field insertion and controlled report context. -->
 <!-- CHANGE AI 1.0.1: Fixed report data collection for the non-form report container. -->
 <!-- CHANGE AI-SCOPED-4: Recommendation field scoping and Collapse Completed repair. -->
@@ -4017,6 +4018,31 @@ function buildProfessionalPrintDocument(mode="client"){
 </style></head><body>${clone.outerHTML}
 
 
+
+
+<script id="archers-global-module-compatibility">
+/* DIAGNOSTICS-5.1
+   Several application modules are deliberately declared with top-level const.
+   Inline HTML handlers can resolve those global lexical bindings, but the
+   structural diagnostics resolve names through window. Expose controlled
+   references after all modules have loaded so both systems use one namespace. */
+(function exposeArchersModules(){
+  const modules = {
+    RulesValidationEngine:
+      typeof RulesValidationEngine !== "undefined" ? RulesValidationEngine : undefined,
+    DeviceHealth:
+      typeof DeviceHealth !== "undefined" ? DeviceHealth : undefined,
+    UpdateManager:
+      typeof UpdateManager !== "undefined" ? UpdateManager : undefined,
+    AIReportWriting:
+      typeof AIReportWriting !== "undefined" ? AIReportWriting : undefined
+  };
+
+  Object.entries(modules).forEach(([name,value])=>{
+    if(value !== undefined) window[name] = value;
+  });
+})();
+</script>
 
 </body></html>`;
 }
