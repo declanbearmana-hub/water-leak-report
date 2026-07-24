@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<!-- CHANGE AI-3.16.8: Built-in Archers AI endpoint, connection monitor, risk assessment and technician assistant. -->
+<!-- CHANGE AI-3.16.9: Scoped AI actions, direct field insertion and controlled report context. -->
 <!-- CHANGE AI 1.0.1: Fixed report data collection for the non-form report container. -->
+<!-- CHANGE AI-SCOPED-4: Recommendation field scoping and Collapse Completed repair. -->
 <!-- CHANGE 3.14.7: Visible timer button timestamps and automatic stop on Ready for Review / Completed. -->
 <!-- CHANGE 3.14.6: Reusable equipment register, fixed technician equipment slots and embedded company-data export. -->
 <!-- BASELINE 3.14.4: Investigation Outcome remains near report end; workflow order follows DOM. -->
@@ -1396,16 +1397,16 @@ button.archers-ai-capability{cursor:pointer}.archers-ai-capability:hover{border-
         <div class="recommendation-empty">Recommendations will update as investigation information is entered. The technician remains responsible for reviewing all recommendations.</div>
       </div>
       <div class="ops-actions no-print" style="margin-bottom:10px">
-        <button class="btn small ai" type="button" onclick="AIReportWriting.summariseRecommendations(this)">Summarise Recommendations with AI</button>
         <button class="btn small orange" type="button" onclick="FieldOps.applyRecommendations()">Add Local Rule Suggestions</button>
-        <button class="btn small secondary" type="button" onclick="AIReportWriting.configure()">AI Setup</button>
-        <span class="ai-writing-status" data-ai-status="recommendations">AI reads the entered report text and proposes concise next actions.</span>
+        <span class="muted">Use the separate AI button below each field so wording is written only into that field.</span>
       </div>
       <input type="hidden" name="automaticRecommendationData" id="automaticRecommendationData">
       <div class="field"><label>Conclusion <span class="required-marker" aria-hidden="true">*</span></label><textarea name="conclusion" required aria-required="true" style="min-height:130px"></textarea>
-        <div class="ai-writing-actions no-print"><button class="btn small ai" type="button" onclick="AIReportWriting.summariseField('conclusion', this)">Summarise with AI</button><span class="ai-writing-status" data-ai-status="conclusion">Creates a concise conclusion supported by the report findings.</span></div>
+        <div class="ai-writing-actions no-print"><button class="btn small ai" type="button" onclick="AIReportWriting.summariseField('conclusion', this)">Write Conclusion with AI</button><span class="ai-writing-status" data-ai-status="conclusion">Writes only the Conclusion field from recorded findings, outcome and limitations.</span></div>
       </div>
-      <div class="field spacer-top"><label>Recommended Next Action</label><textarea name="recommendations">Any physical confirmation, repair, alteration or replacement of plumbing infrastructure should be assessed and undertaken by an appropriately licensed plumber.</textarea></div>
+      <div class="field spacer-top"><label>Recommended Next Action</label><textarea name="recommendations">Any physical confirmation, repair, alteration or replacement of plumbing infrastructure should be assessed and undertaken by an appropriately licensed plumber.</textarea>
+        <div class="ai-writing-actions no-print"><button class="btn small ai" type="button" onclick="AIReportWriting.summariseRecommendations(this)">Write Recommended Next Action with AI</button><span class="ai-writing-status" data-ai-status="recommendations">Writes only future actions. It must not repeat findings or conclusion wording.</span></div>
+      </div>
     </section>
 
     <section class="section">
@@ -5447,7 +5448,7 @@ const GuidedWorkflow=(()=>{
   function goToGroup(group){const index=sections.findIndex(s=>sectionGroup(s)===group);if(index>=0)goTo(index);}
   function expandAll(){sections.forEach(s=>s.classList.remove('collapsed'));refresh();}
   function collapseAll(){sections.forEach(s=>s.classList.add('collapsed'));refresh();}
-  function collapseCompleted(){sections.forEach((s,i)=>{if(stateFor(s)==='complete'&&i!==activeIndex)s.classList.add('collapsed')});refresh();}
+  function collapseCompleted(){let count=0;sections.forEach(s=>{if(stateFor(s)==='complete'){s.classList.add('collapsed');count++;}});const firstOpen=sections.findIndex(s=>!s.classList.contains('collapsed'));activeIndex=firstOpen>=0?firstOpen:0;refresh();setStatus?.(count?`Collapsed ${count} completed section${count===1?'':'s'}.`:'No completed sections were available to collapse.');}
   function refresh(){RulesValidationEngine?.evaluate?.();sections.forEach(s=>{const state=stateFor(s),badge=s.querySelector('.workflow-section-badge');if(badge){badge.textContent=state==='complete'?'✅ Completed':state==='issue'?'⚠️ Incomplete':state==='progress'?'🟧 In Progress':'⚪ Not Started';badge.setAttribute('aria-label',state==='complete'?'Completed':state==='issue'?'Incomplete':state==='progress'?'In Progress':'Not Started');}const completeBtn=s.querySelector('.workflow-complete-btn');if(completeBtn){const manuallyComplete=isManuallyComplete(s);completeBtn.textContent=manuallyComplete?'Reopen Section':(Number(s.dataset.workflowIndex)===sections.length-1?'Mark Complete & Review':'Mark Complete & Proceed');completeBtn.classList.toggle('secondary',manuallyComplete);completeBtn.setAttribute('aria-pressed',manuallyComplete?'true':'false');}s.dataset.workflowState=state;});document.querySelectorAll('.workflow-step').forEach(btn=>{const gi=Number(btn.dataset.group),members=sections.filter(s=>sectionGroup(s)===gi),states=members.map(stateFor),issue=states.includes('issue'),progress=!issue&&states.includes('progress'),complete=members.length&&states.every(x=>x==='complete');btn.classList.toggle('issue',issue);btn.classList.toggle('progress',progress);btn.classList.toggle('complete',complete);btn.classList.toggle('active',members.includes(sections[activeIndex]));const mark=btn.querySelector('.step-mark');if(mark){mark.textContent=issue?'⚠️':complete?'✅':progress?'🟧':'⚪';mark.setAttribute('aria-label',issue?'Incomplete':complete?'Completed':progress?'In Progress':'Not Started');}});updateJobBar();}
   function updateJobBar(){const get=n=>document.querySelector(`[name="${n}"]`)?.value?.trim()||'';document.getElementById('workflowReportNo').textContent=get('reportNo')||'Current Report';document.getElementById('workflowClient').textContent=get('client')||get('company')||'Client not entered';document.getElementById('workflowSite').textContent=get('siteAddress')||'Site not entered';const status=get('reportStatus')||'Draft',pill=document.getElementById('workflowStatus');if(pill){pill.textContent=status;pill.className='workflow-status-pill '+status.toLowerCase().replace(/\s+/g,'-')}const save=document.getElementById('saveStateIndicator');document.getElementById('workflowSaved').textContent=save?.textContent||'Save state unavailable';const locked=['Completed','Issued','Archived'].includes(status);document.getElementById('report')?.classList.toggle('locked-report',locked);document.getElementById('reopenReportButton')?.classList.toggle('hidden',!locked);}
   function invalidateCompletedSection(target){const section=target?.closest?.('#report .workflow-section');if(!section||target?.dataset?.workflowCompletion==='true')return;if(isManuallyComplete(section)){setManuallyComplete(section,false);setStatus?.('Section changed and reopened for review.');}}
@@ -6159,48 +6160,78 @@ const AIReportWriting=(()=>{
       if(field.disabled||field.type==="file")return;
       if((field.type==="checkbox"||field.type==="radio")&&!field.checked)return;
       const key=String(field.name||"").trim();if(!key)return;
-      const values=field instanceof HTMLSelectElement&&field.multiple
-        ? Array.from(field.selectedOptions).map(option=>option.value)
-        : [field.value];
-      values.forEach(value=>{
-        const text=String(value||"").trim();if(!text)return;
-        if(out[key]===undefined)out[key]=text;
-        else if(Array.isArray(out[key]))out[key].push(text);
-        else out[key]=[out[key],text];
-      });
+      const values=field instanceof HTMLSelectElement&&field.multiple?Array.from(field.selectedOptions).map(option=>option.value):[field.value];
+      values.forEach(value=>{const text=String(value||"").trim();if(!text)return;if(out[key]===undefined)out[key]=text;else if(Array.isArray(out[key]))out[key].push(text);else out[key]=[out[key],text];});
     });
     ["siteMapImage","siteMapState","signatureData","photoData","attachmentData","companyEmbeddedData","internalEquipmentChecks"].forEach(k=>delete out[k]);return out;
   }
-  function reportText(){
-    const data=reportObject();const preferred=["reportNo","jobNumber","reportDate","client","company","siteAddress","technician","outcome","methods","pipeMaterial","weather","accessibility","conditionLimitations","findings","leakEnvironment","specificLeakLocation","internalInvestigationAreas","externalInvestigationAreas","estimatedDepth","suspectedService","assessmentConfidence","surfaceMarking","conclusion","recommendations","limitationsDisclaimer"];
-    const lines=[];preferred.forEach(key=>{if(data[key]!==undefined)lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`);});Object.keys(data).filter(k=>!preferred.includes(k)&&!/(image|photo|map|signature|attachment|data)$/i.test(k)).forEach(key=>lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`));return lines.join("\n").slice(0,60000);
+  function pick(data,keys){const out={};keys.forEach(key=>{if(data[key]!==undefined&&String(data[key]).trim()!=="")out[key]=data[key];});return out;}
+  function actionContext(action){
+    const data=reportObject();
+    const common=["reportNo","jobNumber","reportDate","client","company","siteAddress","technician","reasonForAttendance","methods","pipeMaterial","weather","accessibility","conditionLimitations","leakEnvironment","specificLeakLocation","internalInvestigationAreas","externalInvestigationAreas","estimatedDepth","suspectedService","assessmentConfidence","surfaceMarking","outcome","leakLocated"];
+    if(action==="rewrite_findings")return pick(data,[...common,"findings"]); // Deliberately excludes conclusion and recommendations.
+    if(action==="write_conclusion")return pick(data,[...common,"findings","conclusion"]); // Deliberately excludes recommendations.
+    if(action==="write_recommendations")return pick(data,[...common,"findings","conclusion"]); // Existing recommendation text excluded to prevent echo or expansion.
+    if(action==="risk_assessment")return pick(data,[...common,"findings"]);
+    return data;
   }
+  function reportText(action="assistant"){return JSON.stringify(actionContext(action),null,2).slice(0,60000);}
   function extractText(payload){if(typeof payload==="string")return payload.trim();if(payload&&typeof payload.text==="string")return payload.text.trim();if(payload&&typeof payload.output_text==="string")return payload.output_text.trim();if(Array.isArray(payload?.output))return payload.output.flatMap(item=>Array.isArray(item.content)?item.content:[]).map(c=>c.text||"").join("\n").trim();return "";}
-  async function request(task,targetText){
+  function cleanFieldOutput(action,value){
+    let text=String(value||"").trim();
+    if(action==="write_recommendations"){
+      text=text.replace(/^\s*(recommended next action|recommendations?)\s*:?\s*/i,"");
+      const forbidden=/^\s*(findings?|investigation findings?|conclusion)\s*:?\s*$/im;
+      if(forbidden.test(text)){
+        const lines=text.split(/\r?\n/);
+        const kept=[];let skip=false;
+        for(const line of lines){
+          if(/^\s*(findings?|investigation findings?|conclusion)\s*:?\s*$/i.test(line)){skip=true;continue;}
+          if(/^\s*(recommended next action|recommendations?)\s*:?\s*$/i.test(line)){skip=false;continue;}
+          if(!skip)kept.push(line);
+        }
+        text=kept.join("\n").trim();
+      }
+    }
+    return text;
+  }
+  async function request(action,targetText,question=""){
     if(!navigator.onLine)throw new Error("No internet connection is available.");
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),90000);
-    try{const response=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task,model:DEFAULT_MODEL,report:reportText(),text:String(targetText||"")}),signal:controller.signal});let payload;const type=response.headers.get("content-type")||"";payload=type.includes("application/json")?await response.json():await response.text();if(!response.ok)throw new Error((payload&&payload.error?.message)||payload?.error||`AI request failed (${response.status}).`);const text=extractText(payload);if(!text)throw new Error("The AI service returned no usable text.");setConnectionState("connected","Secure server ready");return text;}finally{clearTimeout(timeout);}
+    try{
+      const body={action,model:DEFAULT_MODEL,report:reportText(action),text:String(targetText||""),question:String(question||"")};
+      const response=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal});
+      const type=response.headers.get("content-type")||"";const payload=type.includes("application/json")?await response.json():await response.text();
+      if(!response.ok)throw new Error((payload&&payload.error?.message)||payload?.error||`AI request failed (${response.status}).`);
+      const text=cleanFieldOutput(action,extractText(payload));if(!text)throw new Error("The AI service returned no usable text for this field.");setConnectionState("connected","Secure server ready");return text;
+    }finally{clearTimeout(timeout);}
   }
-  async function runForField(name,button,task){
-    const box=byName(name);if(!box)return;const current=box.value.trim();if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
-    const original=button.textContent;button.disabled=true;button.textContent="AI working…";setAIStatus(name,"Reading the report and preparing a summary…","working");
-    try{const result=await request(task,current);const preview=`AI suggestion:\n\n${result}\n\nReplace the current ${fieldLabels[name]||name} text with this suggestion?`;if(confirm(preview)){box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));autoGrowTextareas();scheduleEmergencyRecovery();setAIStatus(name,"AI summary inserted. Review it for factual accuracy before finalising.","good");setStatus(`${fieldLabels[name]||name} updated with an AI-assisted summary.`);}else setAIStatus(name,"AI suggestion was not inserted.","");}
-    catch(error){console.error("AI writing error",error);setAIStatus(name,error.name==="AbortError"?"AI request timed out.":error.message,"error");alert(error.name==="AbortError"?"AI request timed out. Check the connection and try again.":error.message);checkConnection(false);}finally{button.disabled=false;button.textContent=original;}
+  async function runForField(name,button,action){
+    const box=byName(name);if(!box)return;const current=box.value.trim();
+    if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
+    const original=button.textContent;button.disabled=true;button.textContent="AI working…";setAIStatus(name,`Archers AI is preparing ${fieldLabels[name]||name} only…`,"working");
+    try{
+      const result=await request(action,current);
+      box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));
+      autoGrowTextareas();scheduleEmergencyRecovery();box.scrollIntoView({behavior:"smooth",block:"center"});
+      setAIStatus(name,"Inserted into this field. Review every fact before finalising.","good");setStatus(`${fieldLabels[name]||name} updated by Archers AI.`);
+    }catch(error){console.error("AI writing error",error);setAIStatus(name,error.name==="AbortError"?"AI request timed out.":error.message,"error");alert(error.name==="AbortError"?"AI request timed out. Check the connection and try again.":error.message);checkConnection(false);}
+    finally{button.disabled=false;button.textContent=original;}
   }
-  function summariseField(name,button){const task=name==="findings"?"Rewrite the entered investigation findings into a concise, professional Australian water-leak-detection report section. Preserve every material fact, uncertainty and limitation. Do not invent observations, diagnoses, measurements or plumbing advice. Return only the revised findings text.":"Write a concise professional conclusion based strictly on the full report and the entered conclusion. Make it consistent with the investigation outcome, findings, confidence and limitations. Do not invent facts or claim physical confirmation unless recorded. Return only the conclusion text.";return runForField(name,button,task);}
-  function summariseRecommendations(button){return runForField("recommendations",button,"Read the full water leak detection report and produce a concise Recommended Next Action section. Base it strictly on recorded findings, outcome, confidence, limitations, access, pipe material and methods. Preserve the requirement that physical confirmation, excavation and plumbing repair be undertaken by appropriately licensed persons. Do not invent facts. Use short paragraphs or bullet points and return only the recommendation text.");}
+  function summariseField(name,button){return runForField(name,button,name==="findings"?"rewrite_findings":"write_conclusion");}
+  function summariseRecommendations(button){return runForField("recommendations",button,"write_recommendations");}
   function focusField(name){const field=byName(name);if(!field)return;field.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>field.focus(),450);}
   function openModal(mode){modalMode=mode;const modal=document.getElementById("archersAIModal"),title=document.getElementById("archersAIModalTitle"),subtitle=document.getElementById("archersAIModalSubtitle"),wrap=document.getElementById("archersAIQuestionWrap"),question=document.getElementById("archersAIQuestion"),response=document.getElementById("archersAIResponse"),run=document.getElementById("archersAIRunButton");if(!modal)return;
     response.textContent="Ready.";run.disabled=false;
-    if(mode==="risk"){title.textContent="Archers AI Risk Assessment";subtitle.textContent="Generates a draft field risk review from the current report. It does not replace the SWMS, site assessment or supervisor review.";wrap.classList.add("hidden");run.textContent="Generate Risk Assessment";run.onclick=runRiskAssessment;}
+    if(mode==="risk"){title.textContent="Archers AI Risk Assessment";subtitle.textContent="Generates a draft field risk review from recorded report information only. It does not replace the SWMS, site assessment or supervisor review.";wrap.classList.add("hidden");run.textContent="Generate Risk Assessment";run.onclick=runRiskAssessment;}
     else{title.textContent="Archers Technician Assistant";subtitle.textContent="Ask a question using the current report as context. Verify all technical and safety guidance before acting.";wrap.classList.remove("hidden");question.value="";run.textContent="Ask Archers AI";run.onclick=runTechnicianAssistant;setTimeout(()=>question.focus(),100);}
     modal.classList.add("open");modal.setAttribute("aria-hidden","false");
   }
   function closeModal(){const modal=document.getElementById("archersAIModal");modal?.classList.remove("open");modal?.setAttribute("aria-hidden","true");}
   function openRiskAssessment(){openModal("risk");}
   function openTechnicianAssistant(){openModal("assistant");}
-  async function runRiskAssessment(){const response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");button.disabled=true;response.textContent="Archers AI is reviewing the current report…";try{response.textContent=await request("Prepare a concise draft field risk assessment based strictly on the current water leak detection report. Identify recorded hazards, persons potentially exposed, practical controls, residual concerns and stop-work/escalation triggers. Do not invent site conditions. Clearly state where information is missing. Do not replace the approved SWMS, pre-start risk assessment, licensed trade advice or supervisor direction. Use headings and bullet points.","");}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
-  async function runTechnicianAssistant(){const question=document.getElementById("archersAIQuestion").value.trim(),response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");if(!question){alert("Enter a question first.");return;}button.disabled=true;response.textContent="Archers AI is reviewing the report and your question…";try{response.textContent=await request("Act as a cautious field-support assistant for an Australian water leak detection technician. Answer the technician's question using the current report context. Separate recorded facts from suggestions, state uncertainty, do not invent observations or measurements, do not provide instructions outside the technician's competency, and direct plumbing repair or alteration to an appropriately licensed plumber. Give practical, concise guidance.",question);}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
+  async function runRiskAssessment(){const response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");button.disabled=true;response.textContent="Archers AI is reviewing recorded risk information…";try{response.textContent=await request("risk_assessment","");}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
+  async function runTechnicianAssistant(){const question=document.getElementById("archersAIQuestion").value.trim(),response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");if(!question){alert("Enter a question first.");return;}button.disabled=true;response.textContent="Archers AI is reviewing the report and your question…";try{response.textContent=await request("technician_assistant","",question);}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
   async function copyModalResponse(){const text=document.getElementById("archersAIResponse")?.textContent||"";if(!text||text==="Ready.")return;try{await navigator.clipboard.writeText(text);setStatus("Archers AI result copied to clipboard.");}catch(_){alert("Copy was unavailable. Select the result text manually.");}}
   function initialise(){window.addEventListener("online",()=>checkConnection(false));window.addEventListener("offline",()=>setConnectionState("offline","No internet connection"));document.getElementById("archersAIModal")?.addEventListener("click",event=>{if(event.target.id==="archersAIModal")closeModal();});checkConnection(false);}
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initialise);else initialise();
