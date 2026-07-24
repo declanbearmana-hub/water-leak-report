@@ -4309,8 +4309,8 @@ const StorageFoundation=(()=>{
       rootHandle=await ensureStructure(parentHandle);
       await verifyWritable(rootHandle);
       await saveHandle(parentHandle);
-      await audit("STORAGE_CONNECTED",{folder:`${parentHandle.name}\${ROOT_NAME}`});
-      unlock(`System folder connected: ${parentHandle.name}\${ROOT_NAME}`);
+      await audit("STORAGE_CONNECTED",{folder:`${parentHandle.name}\\${ROOT_NAME}`});
+      unlock(`System folder connected: ${parentHandle.name}\\${ROOT_NAME}`);
       await ensureCurrentJob();
       startAutosave();
       initialised=true;
@@ -4399,7 +4399,7 @@ ${e.message||e}`);
   }
   async function listReports(){const root=await requireRoot(false),db=await root.getDirectoryHandle("Database",{create:true}),idx=await readJson(db,INDEX_FILE,{schema:"AUS-WLD-REPORT-INDEX",version:1,reports:[]});return Array.isArray(idx.reports)?idx.reports.slice().sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||""))):[];}
   async function openIndexedReport(record){if(!record||record.status==="Deleted")throw new Error("Deleted reports cannot yet be opened from this dashboard.");const root=await requireRoot(),folderName=["Completed","Issued","Archived"].includes(record.status)?"Completed Reports":"Active Reports",base=await root.getDirectoryHandle(folderName),year=await base.getDirectoryHandle((String(record.reportDate||"").match(/\b(20\d{2})\b/)||[])[1]||String(new Date().getFullYear())),dir=await year.getDirectoryHandle(record.jobKey),data=await readJson(dir,"report.json",null);if(!data)throw new Error("The report file could not be read.");applyData(data);activeJobDir=dir;activeJobKey=record.jobKey;await audit("REPORT_OPENED",{jobKey:record.jobKey});setStatus(`Opened report: ${record.reportNo||record.jobKey}`);setSaveState("saved","Loaded from report database");return data;}
-  async function storageHealth(){try{const root=await requireRoot(false);await verifyWritable(root);const reports=await listReports();return {ok:true,folder:`${parentHandle?.name||"Selected folder"}\\${ROOT_NAME}`,count:reports.length,deviceId:deviceId()};}catch(error){return {ok:false,error:error.message||String(error),deviceId:deviceId()};}}
+  async function storageHealth(){try{const root=await requireRoot(false);await verifyWritable(root);const reports=await listReports();return {ok:true,folder:`${parentHandle?.name||"Selected folder"}\\\${ROOT_NAME}`,count:reports.length,deviceId:deviceId()};}catch(error){return {ok:false,error:error.message||String(error),deviceId:deviceId()};}}
   async function initialise(){
     lock("Checking Archers Field System folder access…");
     try{
@@ -4413,7 +4413,7 @@ ${e.message||e}`);
       }
       rootHandle=await ensureStructure(parentHandle);
       await verifyWritable(rootHandle);
-      unlock(`System folder available: ${parentHandle.name}\${ROOT_NAME}`);
+      unlock(`System folder available: ${parentHandle.name}\\${ROOT_NAME}`);
       await ensureCurrentJob();
       startAutosave();
       initialised=true;
