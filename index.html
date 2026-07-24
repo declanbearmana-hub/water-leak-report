@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE AI-3.16.8: Built-in Archers AI endpoint, connection monitor, risk assessment and technician assistant. -->
 <!-- CHANGE 3.14.7: Visible timer button timestamps and automatic stop on Ready for Review / Completed. -->
 <!-- CHANGE 3.14.6: Reusable equipment register, fixed technician equipment slots and embedded company-data export. -->
 <!-- BASELINE 3.14.4: Investigation Outcome remains near report end; workflow order follows DOM. -->
@@ -592,10 +593,43 @@ textarea{overflow:hidden;min-height:92px;resize:vertical;white-space:pre-wrap;ov
 @media(max-width:700px){.workflow-section-footer{grid-template-columns:1fr 1fr !important}.workflow-complete-btn{grid-column:1/-1;grid-row:1}.workflow-section-footer .btn{min-height:44px}}
 @media print{.workflow-complete-btn{display:none !important}}
 </style>
+<style>
+/* ARCHERS-AI-CONNECTED-001 */
+.archers-ai-card{border:1px solid #b9d7c2;border-left:5px solid #2e7d32;background:#f5fbf7}
+.archers-ai-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:var(--navy)}
+.archers-ai-dot{width:11px;height:11px;border-radius:50%;background:#8998a7;box-shadow:0 0 0 3px rgba(137,152,167,.16);flex:0 0 auto}
+.archers-ai-card.connected .archers-ai-dot{background:#2e7d32;box-shadow:0 0 0 3px rgba(46,125,50,.16)}
+.archers-ai-card.offline .archers-ai-dot{background:#b26a00;box-shadow:0 0 0 3px rgba(178,106,0,.16)}
+.archers-ai-card.error .archers-ai-dot{background:#b3261e;box-shadow:0 0 0 3px rgba(179,38,30,.16)}
+.archers-ai-status-title{font-weight:900;font-size:13px}.archers-ai-status-detail{font-size:10px;color:var(--muted);margin-top:2px}
+.archers-ai-capabilities{display:grid;gap:5px}.archers-ai-capability{display:flex;align-items:center;gap:7px;width:100%;border:1px solid #d6e4da;border-radius:5px;background:#fff;padding:7px 8px;color:#17324d;font-size:11px;font-weight:800;text-align:left}
+button.archers-ai-capability{cursor:pointer}.archers-ai-capability:hover{border-color:var(--orange);background:#fff8ef}.archers-ai-tick{color:#2e7d32;font-size:14px;font-weight:900}
+.archers-ai-capability:disabled{opacity:.55;cursor:not-allowed}.archers-ai-refresh{width:100%;margin-top:8px}
+.archers-ai-modal{position:fixed;inset:0;z-index:21000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(5,20,36,.78)}.archers-ai-modal.open{display:flex}
+.archers-ai-dialog{width:min(760px,96vw);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:11px;overflow:hidden;box-shadow:0 22px 70px rgba(0,0,0,.42)}
+.archers-ai-dialog-head{background:var(--navy);color:#fff;padding:15px 18px;border-bottom:5px solid var(--orange)}.archers-ai-dialog-head h3{margin:0;font-size:19px}.archers-ai-dialog-head p{margin:5px 0 0;font-size:11px;opacity:.9}
+.archers-ai-dialog-body{padding:16px 18px;overflow:auto}.archers-ai-dialog-body textarea{min-height:110px}.archers-ai-response{margin-top:12px;border:1px solid #cbd6df;border-left:5px solid var(--orange);border-radius:6px;background:#f8fafc;padding:12px;white-space:pre-wrap;font-size:12px;line-height:1.5;min-height:90px}
+.archers-ai-dialog-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;padding:12px 18px;background:#f2f5f8;border-top:1px solid var(--border)}
+@media print{.archers-ai-card,.archers-ai-modal{display:none!important}}
+</style>
 </head>
 <body>
 <div id="offlineDependencyBanner" class="offline-banner no-print" role="status"></div>
 
+<div id="archersAIModal" class="archers-ai-modal no-print" aria-hidden="true">
+  <div class="archers-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="archersAIModalTitle">
+    <div class="archers-ai-dialog-head"><h3 id="archersAIModalTitle">Archers AI</h3><p id="archersAIModalSubtitle">AI-generated content must be reviewed by the technician before use.</p></div>
+    <div class="archers-ai-dialog-body">
+      <div id="archersAIQuestionWrap" class="field"><label id="archersAIQuestionLabel">Question or instructions</label><textarea id="archersAIQuestion" placeholder="Enter your question for the technician assistant"></textarea></div>
+      <div id="archersAIResponse" class="archers-ai-response">Ready.</div>
+    </div>
+    <div class="archers-ai-dialog-actions">
+      <button id="archersAIRunButton" class="btn orange" type="button">Run Archers AI</button>
+      <button id="archersAICopyButton" class="btn secondary" type="button" onclick="AIReportWriting.copyModalResponse()">Copy Result</button>
+      <button class="btn secondary" type="button" onclick="AIReportWriting.closeModal()">Close</button>
+    </div>
+  </div>
+</div>
 <div id="reportDashboard" class="report-dashboard no-print" aria-hidden="true">
   <div class="dashboard-shell">
     <div class="dashboard-header">
@@ -637,6 +671,20 @@ textarea{overflow:hidden;min-height:92px;resize:vertical;white-space:pre-wrap;ov
       <strong id="desktopPanelCompleteness">0%</strong>
       <div id="desktopPanelProgress" class="desktop-progress"><i></i></div>
       <button class="btn small secondary" style="width:100%;margin-top:9px" type="button" onclick="RulesValidationEngine.openReview()">Review Missing Items</button>
+    </section>
+    <section id="archersAICard" class="desktop-panel-card archers-ai-card">
+      <div class="archers-ai-head">
+        <span id="archersAIDot" class="archers-ai-dot" aria-hidden="true"></span>
+        <div><div id="archersAIStatusTitle" class="archers-ai-status-title">Archers AI Checking…</div><div id="archersAIStatusDetail" class="archers-ai-status-detail">Connecting to the secure Archers server</div></div>
+      </div>
+      <div class="archers-ai-capabilities">
+        <button class="archers-ai-capability" type="button" onclick="AIReportWriting.focusField('findings')"><span class="archers-ai-tick">✓</span> Findings</button>
+        <button class="archers-ai-capability" type="button" onclick="AIReportWriting.focusField('conclusion')"><span class="archers-ai-tick">✓</span> Conclusions</button>
+        <button class="archers-ai-capability" type="button" onclick="AIReportWriting.focusField('recommendations')"><span class="archers-ai-tick">✓</span> Recommendations</button>
+        <button class="archers-ai-capability" type="button" onclick="AIReportWriting.openRiskAssessment()"><span class="archers-ai-tick">✓</span> Risk Assessment</button>
+        <button class="archers-ai-capability" type="button" onclick="AIReportWriting.openTechnicianAssistant()"><span class="archers-ai-tick">✓</span> Technician Assistant</button>
+      </div>
+      <button class="btn small secondary archers-ai-refresh" type="button" onclick="AIReportWriting.checkConnection(true)">Check AI Connection</button>
     </section>
     <section class="desktop-panel-card">
       <h4>Workflow</h4>
@@ -6071,101 +6119,77 @@ window.LeakAreaSelector=(function(){
 })();
 </script>
 <script>
-/* AI report-writing integration. Uses a user-configured HTTPS server proxy so API secrets are not stored in this HTML file. */
+/* AI report-writing integration. Secure Archers endpoint is built into this controlled report. */
 const AIReportWriting=(()=>{
-  const ENDPOINT_KEY="archers_wld_ai_proxy_url";
-  const MODEL_KEY="archers_wld_ai_model";
+  const ENDPOINT="https://archers-ai-server.onrender.com/api/ai";
+  const HEALTH_ENDPOINT="https://archers-ai-server.onrender.com/health";
   const DEFAULT_MODEL="gpt-5-mini";
   const fieldLabels={findings:"Investigation Findings",conclusion:"Conclusion",recommendations:"Recommended Next Action"};
   const byName=name=>document.querySelector(`[name="${name}"]`);
+  let modalMode="assistant";
   function setAIStatus(name,message,type=""){
     document.querySelectorAll(`[data-ai-status="${name}"]`).forEach(el=>{el.textContent=message;el.className=`ai-writing-status ${type}`.trim();});
   }
-  function configure(){
-    const existing=localStorage.getItem(ENDPOINT_KEY)||"";
-    const endpoint=prompt("Enter your secure HTTPS AI proxy endpoint. The endpoint must accept a POST JSON request and return { text: \"...\" }. API keys must remain on the server, not inside this HTML file.",existing);
-    if(endpoint===null)return false;
-    const clean=endpoint.trim();
-    if(clean&&!/^https:\/\//i.test(clean)){alert("The AI proxy endpoint must use HTTPS.");return false;}
-    if(clean)localStorage.setItem(ENDPOINT_KEY,clean);else localStorage.removeItem(ENDPOINT_KEY);
-    const currentModel=localStorage.getItem(MODEL_KEY)||DEFAULT_MODEL;
-    const model=prompt("OpenAI model name used by your proxy:",currentModel);
-    if(model!==null&&model.trim())localStorage.setItem(MODEL_KEY,model.trim());
-    setStatus(clean?"AI writing endpoint saved.":"AI writing endpoint removed.");
-    return Boolean(clean);
+  function configure(){setStatus("Archers AI is preconfigured and secured through the Archers server.");checkConnection(true);return true;}
+  function setConnectionState(state,detail){
+    const card=document.getElementById("archersAICard"),title=document.getElementById("archersAIStatusTitle"),desc=document.getElementById("archersAIStatusDetail");
+    if(!card||!title||!desc)return;
+    card.classList.remove("connected","offline","error");card.classList.add(state);
+    title.textContent=state==="connected"?"Archers AI Connected":state==="offline"?"Archers AI Offline":"Archers AI Connection Error";
+    desc.textContent=detail||"";
+    card.querySelectorAll(".archers-ai-capability").forEach(button=>button.disabled=state!=="connected");
+  }
+  async function checkConnection(showMessage=false){
+    if(!navigator.onLine){setConnectionState("offline","No internet connection");if(showMessage)alert("No internet connection is available.");return false;}
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+    try{
+      const response=await fetch(HEALTH_ENDPOINT,{method:"GET",cache:"no-store",signal:controller.signal});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok||payload?.ok!==true)throw new Error("Health check failed");
+      setConnectionState("connected","Secure server ready · Findings, conclusions, recommendations, risk and assistant enabled");
+      if(showMessage)setStatus("Archers AI connection confirmed.");return true;
+    }catch(error){setConnectionState(navigator.onLine?"error":"offline",error.name==="AbortError"?"Connection timed out":"Secure server could not be reached");if(showMessage)alert("Archers AI could not connect to the secure server. Check the internet connection and Render service.");return false;}
+    finally{clearTimeout(timeout);}
   }
   function reportObject(){
-    const form=document.getElementById("report");
-    if(!form)return {};
-    const out={};
-    new FormData(form).forEach((value,key)=>{
-      if(value instanceof File)return;
-      const text=String(value||"").trim();
-      if(!text)return;
-      if(out[key]===undefined)out[key]=text;
-      else if(Array.isArray(out[key]))out[key].push(text);
-      else out[key]=[out[key],text];
-    });
-    // Exclude large binary/image/map payloads and internal storage data.
-    ["siteMapImage","siteMapState","signatureData","photoData","attachmentData","companyEmbeddedData","internalEquipmentChecks"].forEach(k=>delete out[k]);
-    return out;
+    const form=document.getElementById("report");if(!form)return {};
+    const out={};new FormData(form).forEach((value,key)=>{if(value instanceof File)return;const text=String(value||"").trim();if(!text)return;if(out[key]===undefined)out[key]=text;else if(Array.isArray(out[key]))out[key].push(text);else out[key]=[out[key],text];});
+    ["siteMapImage","siteMapState","signatureData","photoData","attachmentData","companyEmbeddedData","internalEquipmentChecks"].forEach(k=>delete out[k]);return out;
   }
   function reportText(){
-    const data=reportObject();
-    const preferred=["reportNo","jobNumber","reportDate","client","company","siteAddress","technician","outcome","methods","pipeMaterial","weather","accessibility","conditionLimitations","findings","leakEnvironment","specificLeakLocation","internalInvestigationAreas","externalInvestigationAreas","estimatedDepth","suspectedService","assessmentConfidence","surfaceMarking","conclusion","recommendations","limitationsDisclaimer"];
-    const lines=[];
-    preferred.forEach(key=>{if(data[key]!==undefined)lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`);});
-    Object.keys(data).filter(k=>!preferred.includes(k)&&!/(image|photo|map|signature|attachment|data)$/i.test(k)).forEach(key=>lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`));
-    return lines.join("\n").slice(0,60000);
+    const data=reportObject();const preferred=["reportNo","jobNumber","reportDate","client","company","siteAddress","technician","outcome","methods","pipeMaterial","weather","accessibility","conditionLimitations","findings","leakEnvironment","specificLeakLocation","internalInvestigationAreas","externalInvestigationAreas","estimatedDepth","suspectedService","assessmentConfidence","surfaceMarking","conclusion","recommendations","limitationsDisclaimer"];
+    const lines=[];preferred.forEach(key=>{if(data[key]!==undefined)lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`);});Object.keys(data).filter(k=>!preferred.includes(k)&&!/(image|photo|map|signature|attachment|data)$/i.test(k)).forEach(key=>lines.push(`${key}: ${Array.isArray(data[key])?data[key].join(", "):data[key]}`));return lines.join("\n").slice(0,60000);
   }
-  function extractText(payload){
-    if(typeof payload==="string")return payload.trim();
-    if(payload&&typeof payload.text==="string")return payload.text.trim();
-    if(payload&&typeof payload.output_text==="string")return payload.output_text.trim();
-    if(Array.isArray(payload?.output)){
-      return payload.output.flatMap(item=>Array.isArray(item.content)?item.content:[]).map(c=>c.text||"").join("\n").trim();
-    }
-    return "";
-  }
+  function extractText(payload){if(typeof payload==="string")return payload.trim();if(payload&&typeof payload.text==="string")return payload.text.trim();if(payload&&typeof payload.output_text==="string")return payload.output_text.trim();if(Array.isArray(payload?.output))return payload.output.flatMap(item=>Array.isArray(item.content)?item.content:[]).map(c=>c.text||"").join("\n").trim();return "";}
   async function request(task,targetText){
     if(!navigator.onLine)throw new Error("No internet connection is available.");
-    let endpoint=localStorage.getItem(ENDPOINT_KEY)||"";
-    if(!endpoint){if(!configure())throw new Error("AI setup was not completed.");endpoint=localStorage.getItem(ENDPOINT_KEY)||"";}
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),60000);
-    try{
-      const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task,model:localStorage.getItem(MODEL_KEY)||DEFAULT_MODEL,report:reportText(),text:String(targetText||"")}),signal:controller.signal});
-      let payload;const type=response.headers.get("content-type")||"";
-      payload=type.includes("application/json")?await response.json():await response.text();
-      if(!response.ok)throw new Error((payload&&payload.error?.message)||payload?.error||`AI request failed (${response.status}).`);
-      const text=extractText(payload);
-      if(!text)throw new Error("The AI service returned no usable text.");
-      return text;
-    }finally{clearTimeout(timeout);}
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),90000);
+    try{const response=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task,model:DEFAULT_MODEL,report:reportText(),text:String(targetText||"")}),signal:controller.signal});let payload;const type=response.headers.get("content-type")||"";payload=type.includes("application/json")?await response.json():await response.text();if(!response.ok)throw new Error((payload&&payload.error?.message)||payload?.error||`AI request failed (${response.status}).`);const text=extractText(payload);if(!text)throw new Error("The AI service returned no usable text.");setConnectionState("connected","Secure server ready");return text;}finally{clearTimeout(timeout);}
   }
   async function runForField(name,button,task){
-    const box=byName(name);if(!box)return;
-    const current=box.value.trim();
-    if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
+    const box=byName(name);if(!box)return;const current=box.value.trim();if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
     const original=button.textContent;button.disabled=true;button.textContent="AI working…";setAIStatus(name,"Reading the report and preparing a summary…","working");
-    try{
-      const result=await request(task,current);
-      const preview=`AI suggestion:\n\n${result}\n\nReplace the current ${fieldLabels[name]||name} text with this suggestion?`;
-      if(confirm(preview)){box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));autoGrowTextareas();scheduleEmergencyRecovery();setAIStatus(name,"AI summary inserted. Review it for factual accuracy before finalising.","good");setStatus(`${fieldLabels[name]||name} updated with an AI-assisted summary.`);}else setAIStatus(name,"AI suggestion was not inserted.","");
-    }catch(error){console.error("AI writing error",error);setAIStatus(name,error.name==="AbortError"?"AI request timed out.":error.message,"error");alert(error.name==="AbortError"?"The AI request timed out. Check the connection and try again.":error.message);}
-    finally{button.disabled=false;button.textContent=original;}
+    try{const result=await request(task,current);const preview=`AI suggestion:\n\n${result}\n\nReplace the current ${fieldLabels[name]||name} text with this suggestion?`;if(confirm(preview)){box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));autoGrowTextareas();scheduleEmergencyRecovery();setAIStatus(name,"AI summary inserted. Review it for factual accuracy before finalising.","good");setStatus(`${fieldLabels[name]||name} updated with an AI-assisted summary.`);}else setAIStatus(name,"AI suggestion was not inserted.","");}
+    catch(error){console.error("AI writing error",error);setAIStatus(name,error.name==="AbortError"?"AI request timed out.":error.message,"error");alert(error.name==="AbortError"?"AI request timed out. Check the connection and try again.":error.message);checkConnection(false);}finally{button.disabled=false;button.textContent=original;}
   }
-  function summariseField(name,button){
-    const task=name==="findings"
-      ?"Rewrite the entered investigation findings into a concise, professional Australian water-leak-detection report section. Preserve every material fact, uncertainty and limitation. Do not invent observations, diagnoses, measurements or plumbing advice. Return only the revised findings text."
-      :"Write a concise professional conclusion based strictly on the full report and the entered conclusion. Make it consistent with the investigation outcome, findings, confidence and limitations. Do not invent facts or claim physical confirmation unless recorded. Return only the conclusion text.";
-    return runForField(name,button,task);
+  function summariseField(name,button){const task=name==="findings"?"Rewrite the entered investigation findings into a concise, professional Australian water-leak-detection report section. Preserve every material fact, uncertainty and limitation. Do not invent observations, diagnoses, measurements or plumbing advice. Return only the revised findings text.":"Write a concise professional conclusion based strictly on the full report and the entered conclusion. Make it consistent with the investigation outcome, findings, confidence and limitations. Do not invent facts or claim physical confirmation unless recorded. Return only the conclusion text.";return runForField(name,button,task);}
+  function summariseRecommendations(button){return runForField("recommendations",button,"Read the full water leak detection report and produce a concise Recommended Next Action section. Base it strictly on recorded findings, outcome, confidence, limitations, access, pipe material and methods. Preserve the requirement that physical confirmation, excavation and plumbing repair be undertaken by appropriately licensed persons. Do not invent facts. Use short paragraphs or bullet points and return only the recommendation text.");}
+  function focusField(name){const field=byName(name);if(!field)return;field.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>field.focus(),450);}
+  function openModal(mode){modalMode=mode;const modal=document.getElementById("archersAIModal"),title=document.getElementById("archersAIModalTitle"),subtitle=document.getElementById("archersAIModalSubtitle"),wrap=document.getElementById("archersAIQuestionWrap"),question=document.getElementById("archersAIQuestion"),response=document.getElementById("archersAIResponse"),run=document.getElementById("archersAIRunButton");if(!modal)return;
+    response.textContent="Ready.";run.disabled=false;
+    if(mode==="risk"){title.textContent="Archers AI Risk Assessment";subtitle.textContent="Generates a draft field risk review from the current report. It does not replace the SWMS, site assessment or supervisor review.";wrap.classList.add("hidden");run.textContent="Generate Risk Assessment";run.onclick=runRiskAssessment;}
+    else{title.textContent="Archers Technician Assistant";subtitle.textContent="Ask a question using the current report as context. Verify all technical and safety guidance before acting.";wrap.classList.remove("hidden");question.value="";run.textContent="Ask Archers AI";run.onclick=runTechnicianAssistant;setTimeout(()=>question.focus(),100);}
+    modal.classList.add("open");modal.setAttribute("aria-hidden","false");
   }
-  function summariseRecommendations(button){
-    const task="Read the full water leak detection report and produce a concise Recommended Next Action section. Base it strictly on recorded findings, outcome, confidence, limitations, access, pipe material and methods. Preserve the requirement that physical confirmation, excavation and plumbing repair be undertaken by appropriately licensed persons. Do not invent facts. Use short paragraphs or bullet points and return only the recommendation text.";
-    return runForField("recommendations",button,task);
-  }
-  return {configure,summariseField,summariseRecommendations,reportObject,reportText};
+  function closeModal(){const modal=document.getElementById("archersAIModal");modal?.classList.remove("open");modal?.setAttribute("aria-hidden","true");}
+  function openRiskAssessment(){openModal("risk");}
+  function openTechnicianAssistant(){openModal("assistant");}
+  async function runRiskAssessment(){const response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");button.disabled=true;response.textContent="Archers AI is reviewing the current report…";try{response.textContent=await request("Prepare a concise draft field risk assessment based strictly on the current water leak detection report. Identify recorded hazards, persons potentially exposed, practical controls, residual concerns and stop-work/escalation triggers. Do not invent site conditions. Clearly state where information is missing. Do not replace the approved SWMS, pre-start risk assessment, licensed trade advice or supervisor direction. Use headings and bullet points.","");}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
+  async function runTechnicianAssistant(){const question=document.getElementById("archersAIQuestion").value.trim(),response=document.getElementById("archersAIResponse"),button=document.getElementById("archersAIRunButton");if(!question){alert("Enter a question first.");return;}button.disabled=true;response.textContent="Archers AI is reviewing the report and your question…";try{response.textContent=await request("Act as a cautious field-support assistant for an Australian water leak detection technician. Answer the technician's question using the current report context. Separate recorded facts from suggestions, state uncertainty, do not invent observations or measurements, do not provide instructions outside the technician's competency, and direct plumbing repair or alteration to an appropriately licensed plumber. Give practical, concise guidance.",question);}catch(error){response.textContent=`Error: ${error.message}`;}finally{button.disabled=false;}}
+  async function copyModalResponse(){const text=document.getElementById("archersAIResponse")?.textContent||"";if(!text||text==="Ready.")return;try{await navigator.clipboard.writeText(text);setStatus("Archers AI result copied to clipboard.");}catch(_){alert("Copy was unavailable. Select the result text manually.");}}
+  function initialise(){window.addEventListener("online",()=>checkConnection(false));window.addEventListener("offline",()=>setConnectionState("offline","No internet connection"));document.getElementById("archersAIModal")?.addEventListener("click",event=>{if(event.target.id==="archersAIModal")closeModal();});checkConnection(false);}
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initialise);else initialise();
+  return {configure,checkConnection,summariseField,summariseRecommendations,reportObject,reportText,focusField,openRiskAssessment,openTechnicianAssistant,closeModal,copyModalResponse};
 })();
 </script>
 </body>
