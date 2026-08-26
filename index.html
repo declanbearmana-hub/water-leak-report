@@ -4970,11 +4970,20 @@ function buildProfessionalPrintDocument(mode="client"){
     overflow-wrap:anywhere
   }
   .print-multiline{min-height:34px;line-height:1.5}
+  /* COMPACT-PDF-PAGINATION-1: Limitations should use remaining page space.
+     Keep its heading with the first content block, but allow long wording to
+     flow naturally across pages instead of forcing a fresh page. */
   .print-limitations-section{
-    break-before:page;page-break-before:always;
-    break-inside:avoid-page;page-break-inside:avoid
+    break-before:auto;page-break-before:auto;
+    break-inside:auto;page-break-inside:auto
   }
-  .print-limitations-section .print-multiline{break-inside:avoid-page;page-break-inside:avoid}
+  .print-limitations-section .section-title{
+    break-after:avoid-page;page-break-after:avoid
+  }
+  .print-limitations-section .print-multiline{
+    break-inside:auto;page-break-inside:auto;
+    orphans:2;widows:2
+  }
   .check-item,.result-option,.equipment-item{
     border:1px solid #d3dce4;border-radius:3px;padding:6px;background:#fff
   }
@@ -5007,17 +5016,31 @@ function buildProfessionalPrintDocument(mode="client"){
   }
   .hidden{display:none!important}
   @media print{
-    .section{break-inside:auto}
-    .print-limitations-section{
-      break-before:page!important;page-break-before:always!important;
-      break-inside:avoid-page!important;page-break-inside:avoid!important
+    /* COMPACT-PDF-PAGINATION-1: Let layout containers split between rows.
+       Previously the whole grid was indivisible, which pushed otherwise
+       printable content onto the next sheet and created large blank areas. */
+    .section,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid,.photo-grid{
+      break-inside:auto!important;page-break-inside:auto!important
     }
-    .section-title{break-after:avoid-page}
-    .field,.grid2,.grid3,.grid4,.check-grid,.result-grid,
-    .equipment-grid,.media-card,.declaration,.signature-wrap,
-    .recommendation-box{break-inside:avoid-page}
-    .photo-grid{break-inside:auto}
-    .header{break-after:avoid-page}
+    .print-limitations-section{
+      break-before:auto!important;page-break-before:auto!important;
+      break-inside:auto!important;page-break-inside:auto!important
+    }
+    .print-limitations-section .print-multiline{
+      break-inside:auto!important;page-break-inside:auto!important;
+      orphans:2;widows:2
+    }
+    .section-title{break-after:avoid-page;page-break-after:avoid}
+    .field,.check-item,.result-option,.equipment-item,.media-card,
+    .declaration,.signature-wrap,.recommendation-box{
+      break-inside:avoid-page;page-break-inside:avoid
+    }
+    .header{break-after:avoid-page;page-break-after:avoid}
+    .footer{
+      margin-top:2mm;
+      break-inside:avoid-page;page-break-inside:avoid;
+      break-before:auto;page-break-before:auto
+    }
   }
   
 /* STORAGE-FOUNDATION-001 */
