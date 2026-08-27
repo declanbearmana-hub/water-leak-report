@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE DESCRIPTIVE-JOB-FOLDERS-1: Each local report is stored in its own descriptive job folder using report number, client and site address, with safe migration from legacy folder names. -->
 <!-- CHANGE AI-READABILITY-1: AI report wording now uses short, professional paragraphs and clearly separated recommendations for easier client and insurer reading. -->
 <!-- CHANGE PHOTO-TAGS-CONTRADICTION-CHECK-1: Added per-photo field tags and non-AI semantic consistency checks without altering map code. -->
 <!-- CHANGE SMART-LINE-OPTIONS-MOVE-FIX-1: Smart Lines are fully interactive after creation; move mode and repeated option-menu access repaired. -->
@@ -5600,7 +5601,7 @@ const StorageFoundation=(()=>{
     if(!parentHandle)return "Not available";
     const status=String(data.reportStatus||"Draft");
     const base=["Completed","Issued","Archived"].includes(status)?"Completed Reports":"Active Reports";
-    return `${currentStorageRootPath()}\\${base}\\${reportYear(data)}\\${keyFor(data)}`;
+    return `${currentStorageRootPath()}\\${base}\\${reportYear(data)}\\${folderNameFor(data)}`;
   }
   function updateStorageText(id,text,className=""){
     const element=document.getElementById(id);
@@ -5774,26 +5775,74 @@ ${e.message||e}`);
   }
   function safe(v,f="Unnamed"){return String(v||f).trim().replace(/[<>:"/\\|?*\x00-\x1F]/g,"-").replace(/\s+/g," ").slice(0,90)||f;}
   function reportYear(data){return (String(data.reportDate||"").match(/\b(20\d{2})\b/)||[])[1]||String(new Date().getFullYear());}
-  function keyFor(data){return `${safe(data.reportNo,"UNNUMBERED")}__${deviceId()}`;}
+  function stableKeyFor(data){return `${safe(data.reportNo,"UNNUMBERED")}__${deviceId()}`;}
+  function folderNameFor(data){
+    const report=safe(data.reportNo,"UNNUMBERED");
+    const client=String(data.client||data.company||"").trim();
+    const site=String(data.siteAddress||"").trim();
+    const label=client&&site?`${report} - ${safe(client,"Client")} - ${safe(site,"Site")}`:`${report} - New Report`;
+    // The device suffix prevents a collision if two disconnected devices happen
+    // to create the same report number before cloud synchronisation catches up.
+    const suffix=`__${deviceId()}`;
+    return `${label.slice(0,Math.max(1,235-suffix.length))}${suffix}`;
+  }
+  function keyFor(data){return folderNameFor(data);}
+  function legacyKeyFor(data){return stableKeyFor(data);}
   function testKeyFor(data){return `TEST-${safe(data.reportNo,"UNNUMBERED")}__${deviceId()}__${Date.now()}`;}
   async function getTestJobDir(data,create=true){const root=await requireTestRoot(),tests=await root.getDirectoryHandle("Test Reports",{create:true}),year=await tests.getDirectoryHandle(reportYear(data),{create:true}),key=activeJobKey&&activeJobKey.startsWith("TEST-")?activeJobKey:testKeyFor(data);if(activeJobDir&&activeJobKey===key)return activeJobDir;activeJobDir=await year.getDirectoryHandle(key,{create});activeJobKey=key;for(const n of ["Photos","Attachments","Maps","Sketches","Exports","Audit"])await activeJobDir.getDirectoryHandle(n,{create:true});await writeJson(activeJobDir,"test-manifest.json",{schema:"AUS-WLD-TEST-REPORT",version:1,testMode:true,reportNo:data.reportNo||"",deviceId:deviceId(),jobKey:key,createdAt:new Date().toISOString()});return activeJobDir;}
   async function getJobDir(data,create=true){
     if(window.DeviceTestMode?.active?.())return getTestJobDir(data,create);
-    const root=await requireRoot(),active=await root.getDirectoryHandle("Active Reports",{create:true}),year=await active.getDirectoryHandle(reportYear(data),{create:true}),key=keyFor(data);
-    if(activeJobDir&&activeJobKey===key){
-      try{
-        await activeJobDir.getDirectoryHandle("Audit",{create:true});
-        return activeJobDir;
-      }catch(error){
-        console.warn("Cached report folder is no longer available; rebuilding the folder handle.",error);
-        resetActiveFolderCache();
+    const root=await requireRoot(),active=await root.getDirectoryHandle("Active Reports",{create:true}),year=await active.getDirectoryHandle(reportYear(data),{create:true}),desiredKey=folderNameFor(data),legacyKey=legacyKeyFor(data);
+
+    async function ensureJobStructure(dir,key){
+      for(const n of ["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"])await dir.getDirectoryHandle(n,{create:true});
+      await writeJson(dir,"folder-manifest.json",{schema:"AUS-WLD-REPORT-FOLDER",version:2,reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",stableJobKey:stableKeyFor(data),jobKey:key,year:reportYear(data),status:data.reportStatus||"Draft",updatedAt:new Date().toISOString(),subfolders:["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"]});
+      return dir;
+    }
+    async function existing(name){try{return await year.getDirectoryHandle(name,{create:false});}catch(error){if(error?.name==="NotFoundError")return null;throw error;}}
+
+    // If this report is already open and its client/address has changed, move the
+    // complete job package into the new descriptive folder on the next save.
+    if(activeJobDir){
+      if(activeJobKey===desiredKey){
+        try{return await ensureJobStructure(activeJobDir,desiredKey);}catch(error){console.warn("Cached report folder is no longer available; rebuilding the folder handle.",error);resetActiveFolderCache();}
+      }else{
+        try{
+          const target=await year.getDirectoryHandle(desiredKey,{create:true});
+          await copyDirectory(activeJobDir,target);
+          const previousKey=activeJobKey;
+          if(previousKey&&previousKey!==desiredKey){try{await year.removeEntry(previousKey,{recursive:true});}catch(error){if(error?.name!=="NotFoundError")console.warn("Previous descriptive job folder could not be removed after migration.",error);}}
+          activeJobDir=target;activeJobKey=desiredKey;
+          return await ensureJobStructure(target,desiredKey);
+        }catch(error){
+          console.warn("Job folder could not be migrated to its descriptive name.",error);
+          if(!create)throw error;
+        }
       }
     }
-    activeJobDir=await year.getDirectoryHandle(key,{create});
-    activeJobKey=key;
-    for(const n of ["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"])await activeJobDir.getDirectoryHandle(n,{create:true});
-    await writeJson(activeJobDir,"folder-manifest.json",{schema:"AUS-WLD-REPORT-FOLDER",version:1,reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",jobKey:key,year:reportYear(data),status:data.reportStatus||"Draft",updatedAt:new Date().toISOString(),subfolders:["Photos","Attachments","Maps","Sketches","Exports","Revisions","Audit","Backups"]});
-    return activeJobDir;
+
+    // Prefer an already-existing descriptive folder. This allows indexed jobs to
+    // reopen without creating duplicates.
+    let dir=await existing(desiredKey);
+    if(dir){activeJobDir=dir;activeJobKey=desiredKey;return ensureJobStructure(dir,desiredKey);}
+
+    // Backwards compatibility: migrate the old REPORT__DEVICE folder the first
+    // time an existing report is saved with this build.
+    if(legacyKey!==desiredKey){
+      const legacy=await existing(legacyKey);
+      if(legacy){
+        const target=await year.getDirectoryHandle(desiredKey,{create:true});
+        await copyDirectory(legacy,target);
+        try{await year.removeEntry(legacyKey,{recursive:true});}catch(error){if(error?.name!=="NotFoundError")console.warn("Legacy report folder could not be removed after migration.",error);}
+        activeJobDir=target;activeJobKey=desiredKey;
+        return ensureJobStructure(target,desiredKey);
+      }
+    }
+
+    if(!create)throw new DOMException(`Report folder not found: ${desiredKey}`,"NotFoundError");
+    dir=await year.getDirectoryHandle(desiredKey,{create:true});
+    activeJobDir=dir;activeJobKey=desiredKey;
+    return ensureJobStructure(dir,desiredKey);
   }
   async function updateIndex(data,status="Active"){
     const root=await requireRoot(),db=await root.getDirectoryHandle("Database",{create:true});
@@ -5801,10 +5850,15 @@ ${e.message||e}`);
     if(!idx||typeof idx!=="object")idx={schema:"AUS-WLD-REPORT-INDEX",version:1,reports:[]};
     if(!Array.isArray(idx.reports))idx.reports=[];
     idx.schema="AUS-WLD-REPORT-INDEX";
-    idx.version=Number(idx.version)||1;
-    const record={reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",reportDate:data.reportDate||"",status,deviceId:deviceId(),jobKey:keyFor(data),folderPath:`${["Completed","Issued","Archived"].includes(status)?"Completed Reports":"Active Reports"}/${reportYear(data)}/${keyFor(data)}`,updatedAt:new Date().toISOString()};
-    const i=idx.reports.findIndex(x=>x&&x.jobKey===record.jobKey);
+    idx.version=Math.max(2,Number(idx.version)||1);
+    const stableJobKey=stableKeyFor(data),folderKey=activeJobKey||folderNameFor(data);
+    const record={reportNo:data.reportNo||"",jobNumber:data.jobNumber||"",client:data.client||data.company||"",siteAddress:data.siteAddress||"",reportDate:data.reportDate||"",status,deviceId:deviceId(),stableJobKey,jobKey:folderKey,folderPath:`${["Completed","Issued","Archived"].includes(status)?"Completed Reports":"Active Reports"}/${reportYear(data)}/${folderKey}`,updatedAt:new Date().toISOString()};
+    const i=idx.reports.findIndex(x=>x&&(x.stableJobKey===stableJobKey||(x.reportNo===record.reportNo&&x.deviceId===record.deviceId)||x.jobKey===folderKey));
     if(i>=0)idx.reports[i]={...idx.reports[i],...record};else idx.reports.push(record);
+    // Remove stale duplicate index entries left by an earlier folder name for the
+    // same report/device, while preserving reports created by other devices.
+    idx.reports=idx.reports.filter((item,index)=>index===i||!(item&&item.reportNo===record.reportNo&&item.deviceId===record.deviceId&&item.jobKey!==folderKey));
+    if(i<0){const newest=idx.reports.findIndex(item=>item&&item.jobKey===folderKey);if(newest<0)idx.reports.push(record);}
     await writeJson(db,INDEX_FILE,idx);
   }
   async function audit(action,details={}){try{const root=await requireRoot(false),sys=await root.getDirectoryHandle("System",{create:true}),log=await readJson(sys,AUDIT_FILE,{schema:"AUS-WLD-AUDIT",version:1,entries:[]});log.entries.push({id:crypto.randomUUID(),at:new Date().toISOString(),action,deviceId:deviceId(),reportNo:document.getElementById("reportNo")?.value||"",details});if(log.entries.length>10000)log.entries=log.entries.slice(-10000);await writeJson(sys,AUDIT_FILE,log);}catch(e){console.warn("Audit write failed",e);}}
@@ -5817,7 +5871,7 @@ ${e.message||e}`);
     }
     if(window.DeviceTestMode?.active?.())await requireTestRoot();
     setSaveState("saving",window.DeviceTestMode?.active?.()?"Saving test report…":"Saving…");
-    return saveQueue=saveQueue.catch(()=>undefined).then(async()=>{try{const data=collectData(),dir=await getJobDir(data,true),savedAt=new Date().toISOString(),isTest=Boolean(window.DeviceTestMode?.active?.());data.storageRecord={schema:isTest?"AUS-WLD-TEST-JOB":"AUS-WLD-JOB",version:2,status:data.reportStatus||"Draft",deviceId:deviceId(),jobKey:isTest?activeJobKey:keyFor(data),savedAt,applicationVersion:APP_VERSION,testMode:isTest};if(!isTest)await verifySelectedRootBinding();await writeJson(dir,"report.json",data);await writeJson(dir,"autosave.json",data);await verifySavedReport(dir,data);const auditDir=await dir.getDirectoryHandle("Audit",{create:true});await writeJson(auditDir,"latest-save.json",{schema:"AUS-WLD-REPORT-SAVE",version:1,reportNo:data.reportNo||"",jobKey:keyFor(data),reason,savedAt,deviceId:deviceId(),applicationVersion:APP_VERSION});if(!isTest){await updateIndex(data,data.reportStatus||"Draft");await audit("REPORT_SAVED",{reason,savedAt});}try{localStorage.setItem(APP_KEY,JSON.stringify(data));}catch(error){console.warn("Browser recovery cache could not be updated after the verified folder save.",error);try{localStorage.removeItem(APP_KEY);}catch(_){}}lastSuccessfulSave=savedAt;lastSavePath=currentReportFolderPath(data);refreshStorageDisplay();setStatus(`Report saved, read back and verified in the selected folder: ${data.reportNo||"Current report"} · ${lastSavePath}`);setSaveState("saved",`Verified save ${new Date(savedAt).toLocaleTimeString("en-AU")} · ${lastSavePath}`);return data;}catch(error){setSaveState("error","Not saved — storage unavailable");refreshStorageDisplay({error:error.message||String(error)});throw error;}});
+    return saveQueue=saveQueue.catch(()=>undefined).then(async()=>{try{const data=collectData(),dir=await getJobDir(data,true),savedAt=new Date().toISOString(),isTest=Boolean(window.DeviceTestMode?.active?.());data.storageRecord={schema:isTest?"AUS-WLD-TEST-JOB":"AUS-WLD-JOB",version:2,status:data.reportStatus||"Draft",deviceId:deviceId(),jobKey:activeJobKey||(isTest?activeJobKey:folderNameFor(data)),savedAt,applicationVersion:APP_VERSION,testMode:isTest};if(!isTest)await verifySelectedRootBinding();await writeJson(dir,"report.json",data);await writeJson(dir,"autosave.json",data);await verifySavedReport(dir,data);const auditDir=await dir.getDirectoryHandle("Audit",{create:true});await writeJson(auditDir,"latest-save.json",{schema:"AUS-WLD-REPORT-SAVE",version:1,reportNo:data.reportNo||"",jobKey:activeJobKey||folderNameFor(data),reason,savedAt,deviceId:deviceId(),applicationVersion:APP_VERSION});if(!isTest){await updateIndex(data,data.reportStatus||"Draft");await audit("REPORT_SAVED",{reason,savedAt});}try{localStorage.setItem(APP_KEY,JSON.stringify(data));}catch(error){console.warn("Browser recovery cache could not be updated after the verified folder save.",error);try{localStorage.removeItem(APP_KEY);}catch(_){}}lastSuccessfulSave=savedAt;lastSavePath=currentReportFolderPath(data);refreshStorageDisplay();setStatus(`Report saved, read back and verified in the selected folder: ${data.reportNo||"Current report"} · ${lastSavePath}`);setSaveState("saved",`Verified save ${new Date(savedAt).toLocaleTimeString("en-AU")} · ${lastSavePath}`);return data;}catch(error){setSaveState("error","Not saved — storage unavailable");refreshStorageDisplay({error:error.message||String(error)});throw error;}});
   }
   async function ensureCurrentJob(){const data=collectData();await getJobDir(data,true);await saveCurrent("job-created");}
   function startAutosave(){if(autosaveTimer)clearInterval(autosaveTimer);if(window.DeviceTestMode?.active?.()){setSaveState("saved","TEST MODE — automatic folder saves paused");return;}let seconds=120;try{seconds=Number(JSON.parse(localStorage.getItem("archers_wld_workflow_settings_v367")||"{}").autosaveInterval)||120;}catch(_){}autosaveTimer=setInterval(()=>saveCurrent("automatic").catch(e=>{console.error(e);lock(`Automatic saving failed: ${e.message||e}`);}),Math.max(60,seconds)*1000);}
@@ -5836,9 +5890,38 @@ ${e.message||e}`);
     return {nextReport:next,savedReport:old.reportNo||"Current report",savedPath,savedAt:lastSuccessfulSave};
   }
   async function copyDirectory(source,target){for await(const [name,h] of source.entries()){if(h.kind==="file"){const f=await h.getFile(),out=await target.getFileHandle(name,{create:true}),w=await out.createWritable();await w.write(await f.arrayBuffer());await w.close();}else{const d=await target.getDirectoryHandle(name,{create:true});await copyDirectory(h,d);}}}
-  async function moveCurrentToCompleted(reason="report-finalised"){if(window.DeviceTestMode?.active?.()){await saveCurrent("manual-test-finalise");setStatus("TEST MODE — report retained in the Test Application Folder and not moved into Completed Reports.");return activeJobDir;}const data=collectData(),root=await requireRoot(),source=await getJobDir(data,false),completed=await root.getDirectoryHandle("Completed Reports",{create:true}),year=await completed.getDirectoryHandle(reportYear(data),{create:true}),target=await year.getDirectoryHandle(keyFor(data),{create:true});await copyDirectory(source,target);const completedAt=new Date().toISOString();await writeJson(target,"completion-record.json",{schema:"AUS-WLD-COMPLETION",version:1,reportNo:data.reportNo||"",jobKey:keyFor(data),completedAt,completedBy:data.technician||data.declarationTechnician||deviceId(),reason});const active=await root.getDirectoryHandle("Active Reports",{create:true}),activeYear=await active.getDirectoryHandle(reportYear(data),{create:true});try{await activeYear.removeEntry(keyFor(data),{recursive:true});}catch(error){console.warn("Active report folder could not be removed after completion",error);}activeJobDir=target;activeJobKey=keyFor(data);await updateIndex(data,data.reportStatus||"Completed");await audit("REPORT_MOVED_TO_COMPLETED",{reason,completedAt,folder:`Completed Reports/${reportYear(data)}/${keyFor(data)}`});return target;}
+  async function moveCurrentToCompleted(reason="report-finalised"){
+    if(window.DeviceTestMode?.active?.()){await saveCurrent("manual-test-finalise");setStatus("TEST MODE — report retained in the Test Application Folder and not moved into Completed Reports.");return activeJobDir;}
+    const data=collectData(),root=await requireRoot(),source=await getJobDir(data,false),folderKey=activeJobKey||folderNameFor(data),completed=await root.getDirectoryHandle("Completed Reports",{create:true}),year=await completed.getDirectoryHandle(reportYear(data),{create:true}),target=await year.getDirectoryHandle(folderKey,{create:true});
+    await copyDirectory(source,target);
+    const completedAt=new Date().toISOString();
+    await writeJson(target,"completion-record.json",{schema:"AUS-WLD-COMPLETION",version:1,reportNo:data.reportNo||"",stableJobKey:stableKeyFor(data),jobKey:folderKey,completedAt,completedBy:data.technician||data.declarationTechnician||deviceId(),reason});
+    const active=await root.getDirectoryHandle("Active Reports",{create:true}),activeYear=await active.getDirectoryHandle(reportYear(data),{create:true});
+    try{await activeYear.removeEntry(folderKey,{recursive:true});}catch(error){console.warn("Active report folder could not be removed after completion",error);}
+    activeJobDir=target;activeJobKey=folderKey;
+    await updateIndex(data,data.reportStatus||"Completed");
+    await audit("REPORT_MOVED_TO_COMPLETED",{reason,completedAt,folder:`Completed Reports/${reportYear(data)}/${folderKey}`});
+    return target;
+  }
   async function requestDeleteCurrentJob(){
-    try{await saveCurrent("before-delete");const reason=prompt("Enter the reason this report is being deleted. The report will be moved to Deleted Reports and can be recovered later.");if(reason===null)return;if(!reason.trim()){alert("A deletion reason is required.");return;}const data=collectData();if(!confirm(`Move ${data.reportNo||"this report"} to Deleted Reports?\n\nThis does not permanently erase the report.`))return;const root=await requireRoot(),deleted=await root.getDirectoryHandle("Deleted Reports",{create:true}),year=await deleted.getDirectoryHandle(reportYear(data),{create:true}),target=await year.getDirectoryHandle(`${keyFor(data)}__DELETED-${Date.now()}`,{create:true}),source=await getJobDir(data,false);await copyDirectory(source,target);await writeJson(target,"deletion-record.json",{schema:"AUS-WLD-DELETION",version:1,reportNo:data.reportNo||"",deletedAt:new Date().toISOString(),deletedBy:data.technician||data.declarationTechnician||deviceId(),deviceId:deviceId(),reason:reason.trim()});const active=await root.getDirectoryHandle("Active Reports"),yearActive=await active.getDirectoryHandle(reportYear(data));await yearActive.removeEntry(keyFor(data),{recursive:true});await updateIndex(data,"Deleted");await audit("REPORT_DELETED",{reason:reason.trim()});activeJobDir=null;activeJobKey="";const next=incrementReportNumber(data.reportNo);resetForFreshReport();setReportNumber(next);await ensureCurrentJob();alert("The report was moved to Deleted Reports. A fresh report has been created and saved.");}catch(e){console.error(e);alert(`The report could not be moved to Deleted Reports.\n\n${e.message||e}`);}
+    try{
+      await saveCurrent("before-delete");
+      const reason=prompt("Enter the reason this report is being deleted. The report will be moved to Deleted Reports and can be recovered later.");
+      if(reason===null)return;
+      if(!reason.trim()){alert("A deletion reason is required.");return;}
+      const data=collectData();
+      if(!confirm(`Move ${data.reportNo||"this report"} to Deleted Reports?\n\nThis does not permanently erase the report.`))return;
+      const root=await requireRoot(),source=await getJobDir(data,false),sourceKey=activeJobKey||folderNameFor(data),deleted=await root.getDirectoryHandle("Deleted Reports",{create:true}),year=await deleted.getDirectoryHandle(reportYear(data),{create:true}),target=await year.getDirectoryHandle(`${sourceKey}__DELETED-${Date.now()}`,{create:true});
+      await copyDirectory(source,target);
+      await writeJson(target,"deletion-record.json",{schema:"AUS-WLD-DELETION",version:1,reportNo:data.reportNo||"",stableJobKey:stableKeyFor(data),jobKey:sourceKey,deletedAt:new Date().toISOString(),deletedBy:data.technician||data.declarationTechnician||deviceId(),deviceId:deviceId(),reason:reason.trim()});
+      const active=await root.getDirectoryHandle("Active Reports"),yearActive=await active.getDirectoryHandle(reportYear(data));
+      await yearActive.removeEntry(sourceKey,{recursive:true});
+      await updateIndex(data,"Deleted");
+      await audit("REPORT_DELETED",{reason:reason.trim(),folder:sourceKey});
+      activeJobDir=null;activeJobKey="";
+      const next=incrementReportNumber(data.reportNo);resetForFreshReport();setReportNumber(next);await ensureCurrentJob();
+      alert("The report was moved to Deleted Reports. A fresh report has been created and saved.");
+    }catch(e){console.error(e);alert(`The report could not be moved to Deleted Reports.\n\n${e.message||e}`);}
   }
   async function deleteDraftReport(record){
     if(!record||record.status!=="Draft")throw new Error("Only Draft reports can be deleted from the Report Manager.");
