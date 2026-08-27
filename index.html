@@ -8070,5 +8070,208 @@ const AIReportWriting=(()=>{
 })();
 window.AIReportWriting=AIReportWriting;
 </script>
+
+<!-- ARCHERS CLOUD SYNC V1.1 — persistent device sign-in; temporary offline/session-refresh failures no longer clear remembered login. Additive local-first Supabase layer. Existing report UI/save/print logic unchanged. -->
+<style id="archersCloudSyncStyles">
+#cloudSyncIndicator{position:fixed;right:14px;bottom:56px;z-index:11000;background:#fff;border:1px solid #aebbc7;border-radius:999px;padding:8px 12px;box-shadow:0 5px 20px rgba(0,0,0,.16);font-size:11px;font-weight:800;color:#365064;cursor:pointer;max-width:min(440px,calc(100vw - 28px));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cloudSyncIndicator.ready,#cloudSyncIndicator.synced{border-color:#3d8b55;color:#276441;background:#f4fbf6}
+#cloudSyncIndicator.syncing{border-color:#3979a8;color:#214f70;background:#f2f8fc}
+#cloudSyncIndicator.pending{border-color:#d89828;color:#7a4a00;background:#fff9ed}
+#cloudSyncIndicator.error,#cloudSyncIndicator.conflict{border-color:#b54141;color:#8b2727;background:#fff5f5}
+.archers-cloud-modal{position:fixed;inset:0;z-index:25000;display:none;align-items:center;justify-content:center;background:rgba(5,20,36,.78);padding:18px}.archers-cloud-modal.open{display:flex}.archers-cloud-dialog{width:min(760px,97vw);max-height:92vh;overflow:auto;background:#fff;border-radius:10px;box-shadow:0 20px 65px rgba(0,0,0,.4)}.archers-cloud-head{background:#0b2745;color:#fff;padding:16px 18px;border-bottom:5px solid #f28c28}.archers-cloud-head h3{margin:0}.archers-cloud-head p{margin:5px 0 0;font-size:12px;opacity:.9}.archers-cloud-body{padding:16px 18px}.archers-cloud-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.archers-cloud-grid .wide{grid-column:1/-1}.archers-cloud-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding:13px 18px;background:#f3f6f8;border-top:1px solid #d8e1e8}.archers-cloud-status{margin:0 0 12px;padding:10px;border-left:4px solid #f28c28;background:#f7f9fb;font-size:12px;line-height:1.45;white-space:pre-wrap}.archers-cloud-list{display:grid;gap:8px}.archers-cloud-row{display:grid;grid-template-columns:1.1fr 1fr 1.7fr auto;gap:10px;align-items:center;border:1px solid #d4dee7;border-radius:7px;padding:9px 10px;background:#fff;font-size:11px}.archers-cloud-row strong{color:#0b2745}.archers-cloud-row span{display:block;color:#5e6d7a;margin-top:2px}.archers-cloud-empty{padding:18px;border:1px dashed #aebbc7;border-radius:7px;text-align:center;color:#5e6d7a}.archers-cloud-help{font-size:11px;color:#5e6d7a;line-height:1.45;margin-top:8px}@media(max-width:700px){.archers-cloud-grid,.archers-cloud-row{grid-template-columns:1fr}.archers-cloud-grid .wide{grid-column:auto}#cloudSyncIndicator{bottom:56px;right:8px;max-width:calc(100vw - 16px)}}@media print{#cloudSyncIndicator,.archers-cloud-modal{display:none!important}}
+</style>
+<script id="archersCloudSyncModule">
+(function(){
+  "use strict";
+  if(window.ArchersCloudSync?.initialised)return;
+
+  const CONFIG_KEY="archers_cloud_config_v1";
+  const SESSION_KEY="archers_cloud_session_v1";
+  const VERSION_KEY="archers_cloud_versions_v1";
+  const ASSET_CACHE_KEY="archers_cloud_asset_cache_v1";
+  const DEFAULT_PROJECT_URL="https://egwzjieplirdkfovxorp.supabase.co";
+  const BUCKET="archers-report-files";
+  const MAX_ASSET_BYTES=50*1024*1024;
+  let syncPromise=null;
+  let syncQueued=false;
+  let suppressNextVerified=false;
+  let initialised=false;
+
+  const parse=(key,fallback={})=>{try{return JSON.parse(localStorage.getItem(key)||"null")||fallback}catch{return fallback}};
+  const store=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));return true}catch(error){console.warn("Cloud local state could not be saved",error);return false}};
+  const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const config=()=>({url:DEFAULT_PROJECT_URL,publishableKey:"",email:"",...parse(CONFIG_KEY,{})});
+  const session=()=>parse(SESSION_KEY,null);
+  const versions=()=>parse(VERSION_KEY,{});
+  const assetCache=()=>parse(ASSET_CACHE_KEY,{});
+  function setConfig(next){const clean={url:String(next.url||DEFAULT_PROJECT_URL).trim().replace(/\/$/,""),publishableKey:String(next.publishableKey||"").trim(),email:String(next.email||"").trim()};store(CONFIG_KEY,clean);return clean;}
+  function saveSession(data){if(!data){localStorage.removeItem(SESSION_KEY);return null}const expiresAt=Date.now()+Math.max(60,Number(data.expires_in)||3600)*1000-60000;const out={access_token:data.access_token,refresh_token:data.refresh_token,token_type:data.token_type||"bearer",expires_at:expiresAt,user:data.user||null};store(SESSION_KEY,out);return out;}
+  function setIndicator(state,message,title=""){
+    const el=document.getElementById("cloudSyncIndicator");if(!el)return;
+    el.className=state||"";el.textContent=message;el.title=title||message;
+  }
+  function configured(){const c=config();return /^https:\/\//i.test(c.url)&&Boolean(c.publishableKey)}
+  function apiHeaders(userSession=null,extra={}){const c=config(),headers={apikey:c.publishableKey,...extra};if(userSession?.access_token)headers.Authorization=`Bearer ${userSession.access_token}`;return headers;}
+  async function responsePayload(response){const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return text}}
+  async function apiFetch(path,options={},requireAuth=true){
+    const c=config();if(!configured())throw new Error("Cloud connection is not configured. Open Cloud Settings first.");
+    const s=requireAuth?await ensureSession():null;if(requireAuth&&!s)throw new Error("Sign in to Archers Cloud first.");
+    const response=await fetch(c.url+path,{...options,headers:apiHeaders(s,{...(options.headers||{})})});
+    if(!response.ok){const payload=await responsePayload(response);const message=payload?.message||payload?.msg||payload?.error_description||payload?.error||`${response.status} ${response.statusText}`;throw new Error(String(message));}
+    return response;
+  }
+  async function ensureSession(){
+    const s=session();if(!s)return null;
+    if(s.access_token&&Number(s.expires_at)>Date.now())return s;
+    if(!s.refresh_token)return null;
+    const c=config();
+    try{
+      const response=await fetch(`${c.url}/auth/v1/token?grant_type=refresh_token`,{method:"POST",headers:{apikey:c.publishableKey,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:s.refresh_token})});
+      if(response.ok)return saveSession(await response.json());
+      const payload=await responsePayload(response);
+      const message=payload?.error_description||payload?.msg||payload?.message||payload?.error||`Session refresh failed (${response.status})`;
+      // Only discard the remembered login when Supabase definitively rejects the
+      // refresh token. Temporary outages/offline operation must never sign a
+      // field device out or force another password prompt.
+      if(response.status===400||response.status===401||response.status===403){
+        console.warn("Archers Cloud remembered session is no longer valid",message);
+        saveSession(null);setIndicator("pending","Cloud sign-in required",String(message));return null;
+      }
+      console.warn("Archers Cloud session refresh temporarily unavailable",message);
+      setIndicator("pending",navigator.onLine?"Cloud pending · Session refresh unavailable":"Cloud pending · Offline");
+      return s;
+    }catch(error){
+      // Network failure: keep the stored refresh token so the same device can
+      // silently resume when connectivity returns. Local reporting continues.
+      console.warn("Archers Cloud session refresh deferred",error);
+      setIndicator("pending",navigator.onLine?"Cloud pending · Connection problem":"Cloud pending · Offline");
+      return s;
+    }
+  }
+  async function signIn(){
+    const c=setConfig({url:document.getElementById("cloudProjectUrl")?.value,publishableKey:document.getElementById("cloudPublishableKey")?.value,email:document.getElementById("cloudEmail")?.value});
+    const password=document.getElementById("cloudPassword")?.value||"";
+    if(!c.publishableKey)throw new Error("Enter the Supabase publishable key.");if(!c.email||!password)throw new Error("Enter your Archers Cloud email and password.");
+    setModalStatus("Signing in…");
+    const response=await fetch(`${c.url}/auth/v1/token?grant_type=password`,{method:"POST",headers:{apikey:c.publishableKey,"Content-Type":"application/json"},body:JSON.stringify({email:c.email,password})});
+    if(!response.ok){const payload=await responsePayload(response);throw new Error(payload?.error_description||payload?.msg||payload?.message||"Sign-in failed")}
+    const s=saveSession(await response.json());document.getElementById("cloudPassword").value="";
+    const profile=await getProfile(s);
+    if(!profile?.active){saveSession(null);throw new Error("This account is not an active Archers user.")}
+    setIndicator("ready",`Cloud ready · ${profile.display_name||profile.email||c.email}`);setModalStatus(`Signed in as ${profile.display_name||profile.email||c.email} · Role: ${profile.role}.`);return profile;
+  }
+  async function signOut(){saveSession(null);setIndicator("pending","Cloud signed out");setModalStatus("Signed out. Local reporting remains fully available.");}
+  async function getProfile(s){
+    if(!s)s=await ensureSession();
+    if(!s?.user?.id)return null;
+    const response=await apiFetch(`/rest/v1/archers_users?user_id=eq.${encodeURIComponent(s.user.id)}&select=user_id,email,display_name,role,active&limit=1`,{method:"GET"},true);
+    const rows=await response.json();return rows[0]||null;
+  }
+  function saveVersion(reportNo,version,updatedAt,localSavedAt){const map=versions();map[reportNo]={version:Number(version)||0,updatedAt:updatedAt||new Date().toISOString(),localSavedAt:localSavedAt||""};store(VERSION_KEY,map)}
+  function knownVersion(reportNo){return Number(versions()[reportNo]?.version)||0}
+  function safeSegment(value){return String(value||"report").trim().replace(/[^A-Za-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,100)||"report"}
+  function extensionForMime(mime){const map={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","application/pdf":"pdf","text/plain":"txt","application/json":"json"};return map[String(mime||"").toLowerCase()]||"bin"}
+  async function sha256(blob){if(!crypto?.subtle)return `${blob.size}-${blob.type}`;const bytes=await blob.arrayBuffer();const digest=await crypto.subtle.digest("SHA-256",bytes);return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("")}
+  async function uploadDataUrl(reportNo,dataUrl){
+    const blob=await fetch(dataUrl).then(r=>r.blob());if(blob.size>MAX_ASSET_BYTES)throw new Error(`A report attachment is ${(blob.size/1048576).toFixed(1)} MB. Cloud storage is limited to 50 MB per file; the local report remains safe.`);
+    const hash=await sha256(blob),cache=assetCache();if(cache[hash])return {__archersCloudFile:true,path:cache[hash],mime:blob.type||"application/octet-stream",size:blob.size};
+    const path=`${safeSegment(reportNo)}/assets/${hash.slice(0,32)}.${extensionForMime(blob.type)}`;
+    await apiFetch(`/storage/v1/object/${encodeURIComponent(BUCKET)}/${path.split("/").map(encodeURIComponent).join("/")}`,{method:"POST",headers:{"Content-Type":blob.type||"application/octet-stream","x-upsert":"true"},body:blob},true);
+    cache[hash]=path;store(ASSET_CACHE_KEY,cache);return {__archersCloudFile:true,path,mime:blob.type||"application/octet-stream",size:blob.size};
+  }
+  async function externalise(value,reportNo){
+    if(typeof value==="string"&&/^data:[^,]+,/i.test(value))return uploadDataUrl(reportNo,value);
+    if(Array.isArray(value)){const out=[];for(const item of value)out.push(await externalise(item,reportNo));return out}
+    if(value&&typeof value==="object"){const out={};for(const [key,item] of Object.entries(value))out[key]=await externalise(item,reportNo);return out}
+    return value;
+  }
+  async function downloadCloudFile(pointer){
+    const encoded=String(pointer.path||"").split("/").map(encodeURIComponent).join("/");
+    const response=await apiFetch(`/storage/v1/object/authenticated/${encodeURIComponent(BUCKET)}/${encoded}`,{method:"GET"},true);const blob=await response.blob();
+    return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||""));reader.onerror=()=>reject(reader.error||new Error("File could not be read"));reader.readAsDataURL(blob)});
+  }
+  async function hydrate(value){
+    if(value&&typeof value==="object"&&value.__archersCloudFile===true&&value.path)return downloadCloudFile(value);
+    if(Array.isArray(value)){const out=[];for(const item of value)out.push(await hydrate(item));return out}
+    if(value&&typeof value==="object"){const out={};for(const [key,item] of Object.entries(value))out[key]=await hydrate(item);return out}
+    return value;
+  }
+  function localSavedPayload(savedAt){
+    let data=null;try{const cached=JSON.parse(localStorage.getItem(typeof APP_KEY!=="undefined"?APP_KEY:"archers_wld_current_report_v1")||"null");if(cached?.storageRecord?.savedAt===savedAt)data=cached}catch(_){}
+    if(!data)data=typeof collectData==="function"?collectData():{};
+    data.storageRecord={...(data.storageRecord||{}),savedAt:savedAt||data.storageRecord?.savedAt||new Date().toISOString(),deviceId:window.StorageFoundation?.deviceId?.()||data.storageRecord?.deviceId||"",status:data.reportStatus||"Draft",applicationVersion:typeof APP_VERSION!=="undefined"?APP_VERSION:data.appVersion||""};
+    return data;
+  }
+  async function fetchRemote(reportNo,full=true){
+    const fields=full?"id,report_no,job_number,client_name,site_address,technician,report_status,report_date,report_data,sync_version,created_at,updated_at,created_by,updated_by":"id,report_no,report_status,sync_version,updated_at,report_data";
+    const response=await apiFetch(`/rest/v1/archers_reports?report_no=eq.${encodeURIComponent(reportNo)}&select=${fields}&limit=1`,{method:"GET"},true);const rows=await response.json();return rows[0]||null;
+  }
+  async function syncCurrent(reason="manual",savedAt=""){
+    if(window.DeviceTestMode?.active?.()){setIndicator("pending","Cloud paused · Test Mode");return null}
+    if(!navigator.onLine){setIndicator("pending","Cloud pending · Offline");return null}
+    if(!configured()){setIndicator("pending","Cloud not configured · Click to set up");return null}
+    const s=await ensureSession();if(!s){setIndicator("pending","Cloud sign-in required · Click to sign in");return null}
+    const data=localSavedPayload(savedAt),reportNo=String(data.reportNo||"").trim();if(!reportNo){setIndicator("pending","Cloud waiting · Report number required");return null}
+    setIndicator("syncing",`Cloud syncing · ${reportNo}`);
+    const remote=await fetchRemote(reportNo,true),known=knownVersion(reportNo),localSavedAt=data.storageRecord?.savedAt||savedAt||"";
+    if(remote){
+      const remoteVersion=Number(remote.sync_version)||0,remoteMeta=remote.report_data?.cloudMeta||{};
+      const unseenNewer=known>0&&remoteVersion>known;
+      const unknownDifferent=known===0&&remoteVersion>0&&remoteMeta.sourceDeviceId&&remoteMeta.sourceDeviceId!==(window.StorageFoundation?.deviceId?.()||"")&&remoteMeta.localSavedAt&&remoteMeta.localSavedAt!==localSavedAt;
+      if(unseenNewer||unknownDifferent){setIndicator("conflict",`Cloud conflict · ${reportNo}`,`A newer or previously unseen cloud version exists (cloud v${remoteVersion}, local known v${known}). Open Cloud Jobs and load/review the cloud copy before overwriting.`);throw new Error(`Cloud conflict for ${reportNo}. A newer or previously unseen cloud version already exists.`)}
+    }
+    const cloudData=await externalise(data,reportNo),now=new Date().toISOString(),nextVersion=remote?(Number(remote.sync_version)||0)+1:1;
+    cloudData.cloudMeta={...(cloudData.cloudMeta||{}),schema:"AUS-WLD-CLOUD",version:1,sourceDeviceId:window.StorageFoundation?.deviceId?.()||"",localSavedAt,cloudSyncedAt:now,syncReason:reason};
+    const common={report_no:reportNo,job_number:String(data.jobNumber||"").trim()||null,client_name:String(data.client||data.company||"").trim()||null,site_address:String(data.siteAddress||"").trim()||null,technician:String(data.technician||"").trim()||null,report_status:String(data.reportStatus||"Draft"),report_date:/^\d{4}-\d{2}-\d{2}$/.test(String(data.reportDate||""))?data.reportDate:null,report_data:cloudData,sync_version:nextVersion,updated_at:now,updated_by:s.user.id};
+    let result;
+    if(remote){const response=await apiFetch(`/rest/v1/archers_reports?report_no=eq.${encodeURIComponent(reportNo)}`,{method:"PATCH",headers:{"Content-Type":"application/json","Prefer":"return=representation"},body:JSON.stringify(common)},true);result=(await response.json())[0]}
+    else{const response=await apiFetch(`/rest/v1/archers_reports`,{method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=representation"},body:JSON.stringify({...common,created_by:s.user.id})},true);result=(await response.json())[0]}
+    saveVersion(reportNo,result?.sync_version||nextVersion,result?.updated_at||now,localSavedAt);setIndicator("synced",`Cloud synced · ${reportNo} · v${result?.sync_version||nextVersion}`,`Local report remains authoritative. Last cloud sync ${new Date(result?.updated_at||now).toLocaleString("en-AU")}.`);return result;
+  }
+  function queueSync(reason="verified-save",savedAt=""){
+    if(suppressNextVerified){suppressNextVerified=false;return}
+    syncQueued=true;if(syncPromise)return syncPromise;
+    syncPromise=(async()=>{while(syncQueued){syncQueued=false;try{await syncCurrent(reason,savedAt)}catch(error){console.error("Archers Cloud sync failed",error);if(!/conflict/i.test(error.message||""))setIndicator("error","Cloud pending · Local save safe",error.message||String(error));break}}})().finally(()=>{syncPromise=null});return syncPromise;
+  }
+  async function listCloudReports(){const response=await apiFetch(`/rest/v1/archers_reports?select=report_no,job_number,client_name,site_address,technician,report_status,report_date,sync_version,updated_at&order=updated_at.desc&limit=500`,{method:"GET"},true);return response.json()}
+  async function openCloudJobs(){
+    const modal=document.getElementById("cloudJobsModal"),list=document.getElementById("cloudJobsList");modal.classList.add("open");modal.setAttribute("aria-hidden","false");list.innerHTML='<div class="archers-cloud-empty">Loading shared cloud reports…</div>';
+    try{const rows=await listCloudReports();if(!rows.length){list.innerHTML='<div class="archers-cloud-empty">No cloud reports have been synced yet.</div>';return}list.innerHTML=rows.map(row=>`<div class="archers-cloud-row"><div><strong>${esc(row.report_no||"Unnumbered")}</strong><span>${esc(row.job_number||"No job number")} · v${Number(row.sync_version)||0}</span></div><div><strong>${esc(row.client_name||"Client not entered")}</strong><span>${esc(row.technician||"")}</span></div><div><strong>${esc(row.site_address||"Site address not entered")}</strong><span>${esc(row.report_status||"Draft")} · ${esc(row.updated_at?new Date(row.updated_at).toLocaleString("en-AU"):"")}</span></div><button class="btn small orange" type="button" data-cloud-load="${esc(row.report_no)}">Load</button></div>`).join("");list.querySelectorAll("[data-cloud-load]").forEach(button=>button.addEventListener("click",()=>loadCloudReport(button.dataset.cloudLoad)))}catch(error){list.innerHTML=`<div class="archers-cloud-empty">Cloud reports could not be loaded: ${esc(error.message||error)}</div>`}
+  }
+  function closeCloudJobs(){const modal=document.getElementById("cloudJobsModal");modal?.classList.remove("open");modal?.setAttribute("aria-hidden","true")}
+  async function loadCloudReport(reportNo){
+    if(!confirm(`Load cloud report ${reportNo}?\n\nThe current report will be saved locally first. The cloud report will then be restored and saved into the local Archers Field System.`))return;
+    try{
+      if(typeof window.StorageFoundation?.saveCurrent==="function")await window.StorageFoundation.saveCurrent("before-cloud-report-load");
+      setIndicator("syncing",`Cloud loading · ${reportNo}`);const remote=await fetchRemote(reportNo,true);if(!remote)throw new Error("The cloud report was not found.");const data=await hydrate(remote.report_data||{});
+      suppressNextVerified=true;window.StorageFoundation?.resetActiveFolderCache?.();if(typeof applyData!=="function")throw new Error("The report restore engine is unavailable.");applyData(data);typeof autoGrowTextareas==="function"&&autoGrowTextareas();window.FieldOps?.restoreTimerFromForm?.();document.getElementById("report")?.classList.toggle("locked-report",["Completed","Issued","Archived"].includes(String(data.reportStatus||"")));
+      saveVersion(reportNo,remote.sync_version,remote.updated_at,remote.report_data?.cloudMeta?.localSavedAt||"");await window.StorageFoundation.saveCurrent("cloud-report-restored");closeCloudJobs();setIndicator("synced",`Cloud loaded · ${reportNo} · v${remote.sync_version}`);typeof setStatus==="function"&&setStatus(`Cloud report ${reportNo} restored and safely saved to the local Archers Field System.`);window.scrollTo({top:0,behavior:"smooth"});
+    }catch(error){console.error("Cloud report load failed",error);setIndicator("error","Cloud load failed · Local report safe",error.message||String(error));alert(`The cloud report could not be loaded.\n\nYour local report remains safe.\n\n${error.message||error}`)}
+  }
+  function setModalStatus(message){const el=document.getElementById("cloudSettingsStatus");if(el)el.textContent=message}
+  async function openSettings(){
+    const c=config(),s=await ensureSession();document.getElementById("cloudProjectUrl").value=c.url||DEFAULT_PROJECT_URL;document.getElementById("cloudPublishableKey").value=c.publishableKey||"";document.getElementById("cloudEmail").value=c.email||s?.user?.email||"";document.getElementById("cloudPassword").value="";document.getElementById("cloudSettingsModal").classList.add("open");document.getElementById("cloudSettingsModal").setAttribute("aria-hidden","false");
+    if(s){try{const p=await getProfile(s);setModalStatus(p?`Signed in as ${p.display_name||p.email} · Role: ${p.role}. Local folder saving remains authoritative.`:"Signed in, but no Archers user profile was returned.")}catch(error){setModalStatus(`Signed in, but profile check failed: ${error.message}`)}}else setModalStatus(configured()?"Cloud connection configured. Sign in to enable shared report sync.":"Enter the Supabase publishable key, then sign in. The publishable key is safe for browser apps; never enter a secret/service-role key here.")
+  }
+  function closeSettings(){const modal=document.getElementById("cloudSettingsModal");modal?.classList.remove("open");modal?.setAttribute("aria-hidden","true")}
+  function saveSettingsOnly(){const c=setConfig({url:document.getElementById("cloudProjectUrl")?.value,publishableKey:document.getElementById("cloudPublishableKey")?.value,email:document.getElementById("cloudEmail")?.value});setModalStatus(c.publishableKey?"Cloud connection settings saved. Sign in to test access.":"Project URL saved. Add the publishable key to enable cloud access.");setIndicator(c.publishableKey?"pending":"pending",c.publishableKey?"Cloud configured · Sign in required":"Cloud not configured · Click to set up")}
+  function buildUI(){
+    if(document.getElementById("cloudSyncIndicator"))return;
+    const indicator=document.createElement("div");indicator.id="cloudSyncIndicator";indicator.className="pending";indicator.textContent="Cloud checking…";indicator.setAttribute("role","button");indicator.setAttribute("tabindex","0");indicator.addEventListener("click",openSettings);indicator.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSettings()}});document.body.appendChild(indicator);
+    document.body.insertAdjacentHTML("beforeend",`<div class="archers-cloud-modal no-print" id="cloudSettingsModal" aria-hidden="true"><div class="archers-cloud-dialog"><div class="archers-cloud-head"><h3>Archers Cloud Settings</h3><p>Shared Supabase report database · local-first and offline safe</p></div><div class="archers-cloud-body"><div class="archers-cloud-status" id="cloudSettingsStatus">Checking…</div><div class="archers-cloud-grid"><div class="field wide"><label>Supabase Project URL</label><input id="cloudProjectUrl" type="url" autocomplete="off"/></div><div class="field wide"><label>Supabase Publishable Key</label><input id="cloudPublishableKey" type="password" autocomplete="off" spellcheck="false"/><div class="archers-cloud-help">Use the <strong>Publishable</strong> key (sb_publishable_…). Never use a secret or service-role key in this browser app.</div></div><div class="field"><label>Email</label><input id="cloudEmail" type="email" autocomplete="username"/></div><div class="field"><label>Password</label><input id="cloudPassword" type="password" autocomplete="current-password"/><div class="archers-cloud-help">Sign in once on this browser/device. The password itself is never stored; a renewable Supabase session is remembered locally and restored automatically after browser/device restarts. Temporary loss of internet will not sign the device out.</div></div></div></div><div class="archers-cloud-actions"><button class="btn secondary" type="button" id="cloudSaveSettingsButton">Save Settings</button><button class="btn secondary" type="button" id="cloudSignOutButton">Sign Out</button><button class="btn secondary" type="button" id="cloudJobsButton">Cloud Jobs</button><button class="btn secondary" type="button" id="cloudSyncNowButton">Sync Current</button><button class="btn orange" type="button" id="cloudSignInButton">Sign In</button><button class="btn" type="button" id="cloudCloseSettingsButton">Close</button></div></div></div><div class="archers-cloud-modal no-print" id="cloudJobsModal" aria-hidden="true"><div class="archers-cloud-dialog"><div class="archers-cloud-head"><h3>Archers Cloud Jobs</h3><p>Shared reports available to authenticated Archers users</p></div><div class="archers-cloud-body"><div class="archers-cloud-list" id="cloudJobsList"></div></div><div class="archers-cloud-actions"><button class="btn secondary" type="button" id="cloudJobsRefreshButton">Refresh</button><button class="btn" type="button" id="cloudJobsCloseButton">Close</button></div></div></div>`);
+    document.getElementById("cloudSaveSettingsButton").addEventListener("click",saveSettingsOnly);document.getElementById("cloudSignInButton").addEventListener("click",()=>signIn().catch(error=>{setModalStatus(`Sign-in failed: ${error.message}`);setIndicator("error","Cloud sign-in failed",error.message)}));document.getElementById("cloudSignOutButton").addEventListener("click",signOut);document.getElementById("cloudSyncNowButton").addEventListener("click",()=>syncCurrent("manual-cloud-sync","").catch(error=>{setModalStatus(`Sync failed: ${error.message}`)}));document.getElementById("cloudJobsButton").addEventListener("click",()=>{closeSettings();openCloudJobs()});document.getElementById("cloudCloseSettingsButton").addEventListener("click",closeSettings);document.getElementById("cloudJobsRefreshButton").addEventListener("click",openCloudJobs);document.getElementById("cloudJobsCloseButton").addEventListener("click",closeCloudJobs);document.getElementById("cloudSettingsModal").addEventListener("click",event=>{if(event.target.id==="cloudSettingsModal")closeSettings()});document.getElementById("cloudJobsModal").addEventListener("click",event=>{if(event.target.id==="cloudJobsModal")closeCloudJobs()});
+  }
+  async function initialise(){
+    if(initialised)return;initialised=true;buildUI();
+    document.addEventListener("aus:report-save-verified",event=>queueSync(event.detail?.reason||"verified-save",event.detail?.savedAt||""));
+    window.addEventListener("online",()=>{setIndicator("pending","Cloud online · Checking pending report");queueSync("connection-restored","")});window.addEventListener("offline",()=>setIndicator("pending","Cloud pending · Offline"));
+    if(!configured()){setIndicator("pending","Cloud not configured · Click to set up");return}
+    const s=await ensureSession();if(!s){setIndicator("pending","Cloud configured · Sign in required");return}
+    try{const p=await getProfile(s);if(p?.active)setIndicator("ready",`Cloud ready · ${p.display_name||p.email}`);else setIndicator("error","Cloud access inactive")}catch(error){setIndicator("error","Cloud connection problem",error.message||String(error))}
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initialise);else initialise();
+  window.ArchersCloudSync={initialised:true,openSettings,closeSettings,signIn,signOut,syncCurrent,queueSync,openCloudJobs,closeCloudJobs,loadCloudReport,listCloudReports,ensureSession};
+})();
+</script>
 </body>
 </html>
