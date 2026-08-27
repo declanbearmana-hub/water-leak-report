@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE AI-READABILITY-1: AI report wording now uses short, professional paragraphs and clearly separated recommendations for easier client and insurer reading. -->
 <!-- CHANGE PHOTO-TAGS-CONTRADICTION-CHECK-1: Added per-photo field tags and non-AI semantic consistency checks without altering map code. -->
 <!-- CHANGE SMART-LINE-OPTIONS-MOVE-FIX-1: Smart Lines are fully interactive after creation; move mode and repeated option-menu access repaired. -->
 <!-- CHANGE SMART-LINE-PRESERVE-STANDARD-1: Preserve a completed standard draft line when switching utility or drawing tool before starting a Smart Line. -->
@@ -7900,6 +7901,14 @@ const AIReportWriting=(()=>{
         }
         text=kept.join("\n").trim();
       }
+      // Keep each recommendation visually separate for client and insurer review.
+      const recLines=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+      if(recLines.length>1)text=recLines.join("\n\n");
+    }else if(["rewrite_findings","write_conclusion"].includes(action)){
+      // Preserve deliberate paragraph breaks returned by the AI and prevent the
+      // field from becoming one dense wall of text. Do not invent headings or
+      // alter technical wording.
+      text=text.replace(/\r\n/g,"\n").replace(/\n{3,}/g,"\n\n");
     }
     return text;
   }
@@ -7908,7 +7917,17 @@ const AIReportWriting=(()=>{
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),90000);
     try{
       const detail=detailInstruction(section);
-      const body={action,model:DEFAULT_MODEL,report:reportText(action,section),text:String(targetText||""),question:String(question||""),detailLevel:detail.level,detailInstruction:detail.instruction};
+      const readabilityInstruction=[
+        detail.instruction,
+        "Write for a professional client and insurance audience.",
+        "Make the response easy to scan on an A4 report: use short focused paragraphs rather than one dense block of text.",
+        "Separate distinct observations, interpretation and outcome into separate paragraphs using a blank line between paragraphs.",
+        "Keep paragraphs concise, normally 2 to 4 sentences each, and avoid unnecessary repetition or filler.",
+        "Use plain professional Australian English while preserving technical accuracy and all recorded facts.",
+        "Do not invent facts, measurements, causes, diagnoses, site conditions or certainty that are not supported by the report.",
+        action==="write_recommendations" ? "Present separate recommendations on separate lines with a blank line between each recommendation. Keep each recommendation action-focused and concise." : "Do not add extra section headings inside the field unless the action specifically requires them."
+      ].filter(Boolean).join(" ");
+      const body={action,model:DEFAULT_MODEL,report:reportText(action,section),text:String(targetText||""),question:String(question||""),detailLevel:detail.level,detailInstruction:readabilityInstruction};
       const response=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal});
       const type=response.headers.get("content-type")||"";const payload=type.includes("application/json")?await response.json():await response.text();
       if(!response.ok)throw new Error((payload&&payload.error?.message)||payload?.error||`AI request failed (${response.status}).`);
@@ -8009,7 +8028,7 @@ const AIReportWriting=(()=>{
           "State the practical division of responsibility: Archers is responsible for carrying out and accurately reporting the investigation performed; clients, asset owners, designers, excavators and contractors remain responsible for plans, permits, risk assessments, safe excavation and physical verification before work proceeds.",
           "State that Archers Underground Services Pty Ltd is not a licensed plumbing contractor and that plumbing isolation, cutting, pressure testing, repair, alteration and replacement must be completed by an appropriately licensed plumber.",
           "Include this disclosure in substance: Archers AI Assistant helped draft, organise or summarise portions of the report; the attending technician must review, verify and approve all AI-assisted wording and remains responsible for the final report.",
-          "Write clear client-facing paragraphs without headings, repetition, invented facts or exaggerated legal language."
+          "Write clear client-facing paragraphs with a blank line between each distinct topic. Keep paragraphs short and easy for a client or insurer to scan. Use the established disclaimer sub-topics where useful, but avoid repetition, invented facts or exaggerated legal language."
         ].join(" ");
 
         try{
