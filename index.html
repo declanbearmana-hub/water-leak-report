@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE PDF-TOPIC-HEADINGS-2: Client/internal PDF narrative fields now render distinct topics as bold professional subheadings with structured bullets and improved spacing. -->
 <!-- CHANGE AUS-DATE-JOB-FOLDERS-3: Job folder display names now use Australian DD-MM-YYYY dates and compact AUS/job/site naming while preserving report IDs and device collision protection. -->
 <!-- CHANGE JOB-FOLDER-DATE-SAFE-2: Added report date to descriptive job folders and made folder migration/save cleanup non-destructive so stale File System Access handles cannot break system-folder connection. -->
 <!-- CHANGE DESCRIPTIVE-JOB-FOLDERS-1: Each local report is stored in its own descriptive job folder using report number, client and site address, with safe migration from legacy folder names. -->
@@ -4876,12 +4877,51 @@ function buildProfessionalPrintDocument(mode="client"){
   clone.querySelectorAll("select").forEach(function(select){
     const div=document.createElement("div");div.className="print-value";const option=select.options&&select.selectedIndex>=0?select.options[select.selectedIndex]:null;div.textContent=printableText(option?option.textContent:select.value);select.replaceWith(div);
   });
+  function buildStructuredPrintText(value,fieldName){
+    const host=document.createElement("div");
+    host.className="print-value print-multiline print-rich-text";
+    const raw=String(value||"").replace(/\r/g,"").trim();
+    if(!raw){host.textContent="—";return host;}
+
+    const knownHeading=/^(practical limitations affecting further work at this site(?: \(recorded & interpretive\))?|limitations on report content and scope(?: \(administrative\))?|ai assistance disclosure and technician responsibility|physical verification(?: requirements)?|service locating \/ signal limitations|plumbing (?:&|and) repair responsibilities|report scope (?:&|and) administrative limitations|investigation findings|findings|conclusion|recommended next action|recommendations?|important(?: notice)?|site limitations|method limitations|equipment limitations|access limitations|interpretation|technician responsibility)$/i;
+    const lines=raw.split(/\n/);
+    let paragraph=[];
+    let list=null;
+    const flushParagraph=()=>{
+      const text=paragraph.join(" ").trim();paragraph=[];
+      if(!text)return;
+      const p=document.createElement("p");p.className="print-topic-paragraph";p.textContent=text;host.appendChild(p);
+    };
+    const flushList=()=>{if(list){host.appendChild(list);list=null;}};
+    const addHeading=(text)=>{flushParagraph();flushList();const h=document.createElement("div");h.className="print-topic-heading";h.textContent=text.replace(/\s*[:：]\s*$/,"");host.appendChild(h);};
+    lines.forEach((line,index)=>{
+      const text=line.trim();
+      if(!text){flushParagraph();flushList();return;}
+      const bullet=text.match(/^(?:[-•–—]|\d+[.)])\s+(.+)$/);
+      const headingLike=knownHeading.test(text)||(/^[A-Z][^.!?]{2,70}:$/.test(text)&&!bullet)||(/^[A-Z][A-Z0-9 &/()\-]{4,70}$/.test(text)&&text.split(/\s+/).length<=10);
+      if(headingLike){addHeading(text);return;}
+      if(bullet){
+        flushParagraph();
+        if(!list){list=document.createElement("ul");list.className="print-topic-list";}
+        const li=document.createElement("li");li.textContent=bullet[1].trim();list.appendChild(li);return;
+      }
+      flushList();paragraph.push(text);
+    });
+    flushParagraph();flushList();
+    return host;
+  }
+
   clone.querySelectorAll("textarea").forEach(function(area){
     const section=area.name==="limitationsDisclaimer" ? area.closest(".section") : null;
     if(section) section.classList.add("print-limitations-section");
-    const div=document.createElement("div");
-    div.className="print-value print-multiline";
-    div.textContent=printableText(area.value||area.textContent);
+    const narrativeFields=["findings","conclusion","recommendations","limitationsDisclaimer"];
+    const div=narrativeFields.includes(area.name)
+      ? buildStructuredPrintText(area.value||area.textContent,area.name)
+      : document.createElement("div");
+    if(!narrativeFields.includes(area.name)){
+      div.className="print-value print-multiline";
+      div.textContent=printableText(area.value||area.textContent);
+    }
     area.replaceWith(div);
   });
 
@@ -4974,6 +5014,20 @@ function buildProfessionalPrintDocument(mode="client"){
     overflow-wrap:anywhere
   }
   .print-multiline{min-height:34px;line-height:1.5}
+  .print-rich-text{padding:7px 9px;white-space:normal}
+  .print-topic-heading{
+    margin:12px 0 5px;padding:5px 7px;
+    background:#eef3f7;border-left:4px solid #f28c28;
+    color:#0b2745;font-size:9.6pt;font-weight:900;
+    letter-spacing:.12px;line-height:1.3;
+    break-after:avoid-page;page-break-after:avoid
+  }
+  .print-topic-heading:first-child{margin-top:0}
+  .print-topic-paragraph{margin:0 0 8px;line-height:1.55}
+  .print-topic-paragraph:last-child{margin-bottom:0}
+  .print-topic-list{margin:2px 0 10px 20px;padding:0}
+  .print-topic-list li{margin:0 0 6px;padding-left:2px;line-height:1.5}
+  .print-topic-heading + .print-topic-list{margin-top:3px}
   /* COMPACT-PDF-PAGINATION-1: Limitations should use remaining page space.
      Keep its heading with the first content block, but allow long wording to
      flow naturally across pages instead of forcing a fresh page. */
