@@ -4830,6 +4830,7 @@ function buildProfessionalPrintDocument(mode="client"){
   });
 
   // Keep required fields, but omit optional empty entries from client output only.
+  const isEmptyPrintValue = value => /^(?:|—|-|n\/?a|not applicable|not provided|please select|select|choose|not selected)$/i.test(String(value||"").trim());
   if(!isInternal){
     clone.querySelectorAll(".field").forEach(function(field){
       const controls=Array.from(field.querySelectorAll("input:not([type=hidden]),select,textarea"));
@@ -4837,7 +4838,7 @@ function buildProfessionalPrintDocument(mode="client"){
       const entry=controls[0];
       if(entry.required||entry.getAttribute("aria-required")==="true"||["checkbox","radio"].includes(entry.type))return;
       const filled=entry.tagName==="SELECT" ? String(entry.selectedOptions?.[0]?.textContent||entry.value||"").trim() : String(entry.value||"").trim();
-      if(filled && !/^(?:select|choose|please select|not selected|—|-)\b/i.test(filled))return;
+      if(!isEmptyPrintValue(filled) && !/^(?:select|choose|please select)\b/i.test(filled))return;
       if(field.querySelector("img,canvas,svg,[data-attachment-id]"))return;
       field.remove();
     });
@@ -4962,12 +4963,20 @@ function buildProfessionalPrintDocument(mode="client"){
     clone.querySelectorAll(".field").forEach(function(field){
       if(field.querySelector("img,.preview,.signature-wrap,[data-attachment-id],.print-check") || field.querySelector(".required-marker"))return;
       const values=Array.from(field.querySelectorAll(".print-value"));
-      if(!values.length || values.some(v=>v.textContent.trim() && v.textContent.trim()!=="—"))return;
+      if(!values.length || values.some(v=>!isEmptyPrintValue(v.textContent)))return;
       if(field.querySelector("label") && !field.querySelector("[required],[aria-required=true]"))field.remove();
     });
     clone.querySelectorAll(".photo-grid,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid").forEach(function(grid){
       if(!grid.children.length)grid.remove();
     });
+  }
+
+  // Remove any empty photographic evidence cards and blank captions before pagination.
+  if(!isInternal){
+    clone.querySelectorAll(".photo-grid .media-card").forEach(function(card){
+      if(!card.querySelector("img"))card.remove();
+    });
+    clone.querySelectorAll(".photo-grid").forEach(function(grid){if(!grid.querySelector(".media-card,img"))grid.remove();});
   }
 
   // CLIENT-PDF-6: Do not issue empty optional sections. Once client-internal
@@ -4990,12 +4999,12 @@ function buildProfessionalPrintDocument(mode="client"){
 
   const title=(typeof generatedReportFileName==="function"?generatedReportFileName():"Archers Water Leak Detection Report")+(isInternal?" - Internal Report":" - Client Report");
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapePrintHtml(title)}</title><style>
-  @page{size:A4 portrait;margin:8.5mm 8.5mm 9mm}
+  @page{size:A4 portrait;margin:8mm 8mm 8.5mm}
   *{box-sizing:border-box}
   html,body{
     margin:0;background:#fff;color:#24313d;
     font-family:Arial,Helvetica,sans-serif;
-    font-size:10pt;line-height:1.42;
+    font-size:9.5pt;line-height:1.34;
     -webkit-print-color-adjust:exact;print-color-adjust:exact
   }
   body{orphans:3;widows:3}
@@ -5015,22 +5024,22 @@ function buildProfessionalPrintDocument(mode="client"){
   .report-title{text-align:right}
   .report-title h1{font-size:18pt;line-height:1.12;margin:0 0 6px}
   .report-title p{margin:0;font-size:9pt}
-  .content{padding:3.5mm 4mm 3mm}
+  .content{padding:2.5mm 3mm 2mm}
   .quick-meta,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid,.photo-grid{
-    display:grid;gap:5px 8px
+    display:grid;gap:4px 7px
   }
   .quick-meta,.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}
   .grid3,.check-grid,.equipment-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .grid2,.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .result-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
   .section{
-    margin:0 0 2mm;border:1px solid #c8d2dc;border-radius:4px;
+    margin:0 0 1.6mm;border:1px solid #c8d2dc;border-radius:4px;
     overflow:visible;background:#fff;break-inside:auto
   }
   .section-title{
-    margin:0 0 1.5mm;padding:5px 9px;
+    margin:0 0 1mm;padding:4px 8px;
     background:#173f68;color:#fff;border-left:5px solid #f28c28;
-    font-size:12pt;font-weight:800;letter-spacing:.05px;
+    font-size:11pt;font-weight:800;letter-spacing:.05px;
     break-after:avoid-page;page-break-after:avoid
   }
   .section>.field,.section>.grid2,.section>.grid3,.section>.grid4,
@@ -5093,7 +5102,14 @@ function buildProfessionalPrintDocument(mode="client"){
   .preview.site img{max-height:125mm}
   .photo-grid .media-card{min-width:0;padding:5px}
   .photo-grid .preview{margin-bottom:3px}
-  .photo-grid .preview img{max-height:78mm}
+  .photo-grid .preview img{max-height:72mm;object-fit:contain}
+  .photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:start}
+  .photo-grid .media-card{break-inside:avoid-page;page-break-inside:avoid;min-width:0}
+  .photo-grid .media-card img{max-width:100%}
+  .print-topic-heading + .print-topic-paragraph{break-before:avoid-page}
+  .print-topic-list li{break-inside:avoid-page}
+  .section-title + .field,.section-title + .grid2,.section-title + .grid3,
+  .section-title + .grid4,.section-title + .photo-grid{break-before:avoid-page}
   .photo-title-input{border:0;font-weight:800;font-size:10.5pt;width:100%}
   .signature-wrap{height:22mm;border:1px solid #bcc8d3}
   .print-signature{width:100%;height:100%;object-fit:contain}
@@ -5133,7 +5149,9 @@ function buildProfessionalPrintDocument(mode="client"){
       break-inside:auto!important;page-break-inside:auto!important;
       orphans:2;widows:2
     }
-    .section-title{break-after:avoid-page;page-break-after:avoid}
+    .section-title,.print-topic-heading{break-after:avoid-page;page-break-after:avoid}
+    .photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+    .print-topic-paragraph{orphans:3;widows:3}
     .field,.check-item,.result-option,.equipment-item,.media-card,
     .declaration,.signature-wrap,.recommendation-box{
       break-inside:avoid-page;page-break-inside:avoid
