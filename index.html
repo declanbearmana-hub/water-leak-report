@@ -4972,19 +4972,19 @@ function buildProfessionalPrintDocument(mode="client"){
 
   const title=(typeof generatedReportFileName==="function"?generatedReportFileName():"Archers Water Leak Detection Report")+(isInternal?" - Internal Report":" - Client Report");
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapePrintHtml(title)}</title><style>
-  @page{size:A4 portrait;margin:11mm 10mm 12mm}
+  @page{size:A4 portrait;margin:8.5mm 8.5mm 9mm}
   *{box-sizing:border-box}
   html,body{
     margin:0;background:#fff;color:#24313d;
     font-family:Arial,Helvetica,sans-serif;
-    font-size:10.25pt;line-height:1.48;
+    font-size:10pt;line-height:1.42;
     -webkit-print-color-adjust:exact;print-color-adjust:exact
   }
   body{orphans:3;widows:3}
-  .report{width:100%;max-width:190mm;margin:0 auto;background:#fff}
+  .report{width:100%;max-width:193mm;margin:0 auto;background:#fff}
   .header{
-    display:grid;grid-template-columns:minmax(52mm,.9fr) 1.25fr;gap:8mm;
-    background:#031e41;color:#fff;padding:6mm 8mm 5mm;
+    display:grid;grid-template-columns:minmax(52mm,.9fr) 1.25fr;gap:6mm;
+    background:#031e41;color:#fff;padding:5mm 7mm 4mm;
     border-bottom:4px solid #f28c28;break-after:avoid-page;align-items:center
   }
   .header-brand{display:flex;align-items:center;min-width:0}
@@ -4997,7 +4997,7 @@ function buildProfessionalPrintDocument(mode="client"){
   .report-title{text-align:right}
   .report-title h1{font-size:18pt;line-height:1.12;margin:0 0 6px}
   .report-title p{margin:0;font-size:9pt}
-  .content{padding:7mm 7mm 5mm}
+  .content{padding:5mm 5.5mm 4mm}
   .quick-meta,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid,.photo-grid{
     display:grid;gap:7px 10px
   }
@@ -5006,11 +5006,11 @@ function buildProfessionalPrintDocument(mode="client"){
   .grid2,.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .result-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
   .section{
-    margin:0 0 4.5mm;border:1px solid #c8d2dc;border-radius:4px;
+    margin:0 0 3mm;border:1px solid #c8d2dc;border-radius:4px;
     overflow:visible;background:#fff;break-inside:auto
   }
   .section-title{
-    margin:0 0 3mm;padding:7px 10px;
+    margin:0 0 2.5mm;padding:6px 9px;
     background:#173f68;color:#fff;border-left:5px solid #f28c28;
     font-size:12pt;font-weight:800;letter-spacing:.05px;
     break-after:avoid-page;page-break-after:avoid
@@ -5021,7 +5021,7 @@ function buildProfessionalPrintDocument(mode="client"){
   .section>.recommendation-box,.section>.leak-location-panel{
     margin-left:9px;margin-right:9px
   }
-  .section>*:last-child{margin-bottom:9px}
+  .section>*:last-child{margin-bottom:7px}
   .field,.check-item,.result-option,.equipment-item,.declaration,
   .recommendation-box,.signature-wrap{break-inside:avoid-page}
   .field label,.mini-title{
@@ -5029,12 +5029,12 @@ function buildProfessionalPrintDocument(mode="client"){
     color:#42566a;text-transform:uppercase;letter-spacing:.2px
   }
   .print-value{
-    min-height:22px;padding:5px 6px;border:1px solid #d7dfe6;
+    min-height:19px;padding:4px 6px;border:1px solid #d7dfe6;
     border-radius:3px;background:#fbfcfd;white-space:pre-wrap;
     overflow-wrap:anywhere
   }
-  .print-multiline{min-height:34px;line-height:1.5}
-  .print-rich-text{padding:7px 9px;white-space:normal}
+  .print-multiline{min-height:25px;line-height:1.42;break-inside:auto}
+  .print-rich-text{padding:7px 9px;white-space:normal;break-inside:auto}
   .print-topic-heading{
     margin:12px 0 5px;padding:5px 7px;
     background:#eef3f7;border-left:4px solid #f28c28;
@@ -5043,7 +5043,7 @@ function buildProfessionalPrintDocument(mode="client"){
     break-after:avoid-page;page-break-after:avoid
   }
   .print-topic-heading:first-child{margin-top:0}
-  .print-topic-paragraph{margin:0 0 8px;line-height:1.55}
+  .print-topic-paragraph{margin:0 0 8px;line-height:1.48;orphans:2;widows:2}
   .print-topic-paragraph:last-child{margin-bottom:0}
   .print-topic-list{margin:2px 0 10px 20px;padding:0}
   .print-topic-list li{margin:0 0 6px;padding-left:2px;line-height:1.5}
@@ -5067,10 +5067,11 @@ function buildProfessionalPrintDocument(mode="client"){
   }
   .print-check{font-weight:900;color:#2e7d32}
   .media-card{border:1px solid #bcc8d3;padding:8px;break-inside:avoid-page}
-  .preview{min-height:105px;display:flex;align-items:center;justify-content:center}
-  .preview img{width:100%;max-height:174mm;object-fit:contain}
+  .preview{min-height:0;display:flex;align-items:center;justify-content:center}
+  .preview img{width:100%;max-height:105mm;object-fit:contain}
+  .preview.site img{max-height:135mm}
   .photo-title-input{border:0;font-weight:800;font-size:10.5pt;width:100%}
-  .signature-wrap{height:34mm;border:1px solid #bcc8d3}
+  .signature-wrap{height:29mm;border:1px solid #bcc8d3}
   .print-signature{width:100%;height:100%;object-fit:contain}
   .print-signature-blank{height:100%}
   .declaration{padding:8px;border:1px solid #bcc8d3;background:#f8fafc}
@@ -5112,6 +5113,10 @@ function buildProfessionalPrintDocument(mode="client"){
     .field,.check-item,.result-option,.equipment-item,.media-card,
     .declaration,.signature-wrap,.recommendation-box{
       break-inside:avoid-page;page-break-inside:avoid
+    }
+    /* Allow multi-paragraph findings, conclusions and disclaimers to fill available page space. */
+    .field.print-narrative-field,.print-narrative-field .print-rich-text{
+      break-inside:auto!important;page-break-inside:auto!important
     }
     .header{break-after:avoid-page;page-break-after:avoid}
     .footer{
