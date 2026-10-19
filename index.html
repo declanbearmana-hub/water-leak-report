@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE CONCISE-WRITING-1: Preserve operator no-recommendations wording and use concise, optional disclaimer drafts. -->
 <!-- CHANGE PDF-TOPIC-HEADINGS-2: Client/internal PDF narrative fields now render distinct topics as bold professional subheadings with structured bullets and improved spacing. -->
 <!-- CHANGE AUS-DATE-JOB-FOLDERS-3: Job folder display names now use Australian DD-MM-YYYY dates and compact AUS/job/site naming while preserving report IDs and device collision protection. -->
 <!-- CHANGE JOB-FOLDER-DATE-SAFE-2: Added report date to descriptive job folders and made folder migration/save cleanup non-destructive so stale File System Access handles cannot break system-folder connection. -->
@@ -1562,12 +1563,12 @@ button.archers-ai-capability{cursor:pointer}.archers-ai-capability:hover{border-
 <div class="ai-writing-actions no-print"><button class="btn small ai" onclick="AIReportWriting.summariseField('conclusion', this)" type="button">Write Conclusion with AI</button><span class="ai-detail-inline"><label for="aiDetailConclusion">AI Detail</label><select data-ai-detail-section="conclusion" id="aiDetailConclusion" onchange="AIReportWriting.saveSectionDetail('conclusion',this.value)"><option selected="" value="global">Use global — Standard</option><option value="quick">⚡ Quick</option><option value="standard">📋 Standard</option><option value="detailed">🔬 Detailed</option><option value="comprehensive">📖 Comprehensive</option></select></span><span class="ai-writing-status" data-ai-status="conclusion">Writes only the Conclusion field from recorded findings, outcome and limitations.</span></div>
 </div>
 <div class="field spacer-top"><label>Recommended Next Action</label><textarea name="recommendations" placeholder="Enter a recommendation manually, add an automatic recommendation, or generate one with AI."></textarea>
-<div class="ai-writing-actions no-print"><button class="btn small ai" onclick="AIReportWriting.improveManualRecommendation(this)" type="button">Improve My Recommendation with AI</button><button class="btn small secondary" onclick="RecommendationManager.saveCurrent()" type="button">Save for Later Use</button><span class="ai-detail-inline"><label for="aiDetailRecommendations">AI Detail</label><select data-ai-detail-section="recommendations" id="aiDetailRecommendations" onchange="AIReportWriting.saveSectionDetail('recommendations',this.value)"><option selected="" value="global">Use global — Standard</option><option value="quick">⚡ Quick</option><option value="standard">📋 Standard</option><option value="detailed">🔬 Detailed</option><option value="comprehensive">📖 Comprehensive</option></select></span><span class="ai-writing-status" data-ai-status="recommendations">AI improves the recommendation already entered here.</span></div>
+<div class="ai-writing-actions no-print"><button class="btn small secondary" onclick="AIReportWriting.setNoRecommendations()" type="button">No Recommendations Required</button><button class="btn small ai" onclick="AIReportWriting.improveManualRecommendation(this)" type="button">Improve My Recommendation with AI</button><button class="btn small secondary" onclick="RecommendationManager.saveCurrent()" type="button">Save for Later Use</button><span class="ai-detail-inline"><label for="aiDetailRecommendations">AI Detail</label><select data-ai-detail-section="recommendations" id="aiDetailRecommendations" onchange="AIReportWriting.saveSectionDetail('recommendations',this.value)"><option selected="" value="global">Use global — Standard</option><option value="quick">⚡ Quick</option><option value="standard">📋 Standard</option><option value="detailed">🔬 Detailed</option><option value="comprehensive">📖 Comprehensive</option></select></span><span class="ai-writing-status" data-ai-status="recommendations">AI improves the recommendation already entered here.</span></div>
 </div>
 </section>
 <section class="section">
 <h2 class="section-title">13. Limitations &amp; Disclaimer</h2>
-<div class="info-note">This section remains empty until you generate a disclaimer or enter wording manually. When online, Archers AI reviews the complete report and drafts limitations and an appropriate disclaimer. When offline, use manual entry or a saved disclaimer.</div>
+<div class="info-note">Keep the disclaimer brief and relevant to the work performed. Generate a concise draft, enter manual wording or use a saved disclaimer.</div>
 <textarea id="limitationsDisclaimer" name="limitationsDisclaimer" placeholder="AI-generated or manually entered limitations and disclaimer will appear here." style="min-height:210px"></textarea>
 <div class="disclaimer-actions no-print">
 <button class="btn small ai" onclick="AIReportWriting.generateDisclaimer(this)" type="button">Generate / Refresh Disclaimer with AI</button><span class="muted">Technician review and approval required before issue.</span>
@@ -1575,7 +1576,7 @@ button.archers-ai-capability{cursor:pointer}.archers-ai-capability:hover{border-
 <button class="btn small secondary" onclick="DisclaimerManager.toggleSaved()" type="button">Saved Disclaimers</button>
 <span class="ai-detail-inline"><label for="aiDetailDisclaimer">AI Detail</label><select data-ai-detail-section="disclaimer" id="aiDetailDisclaimer" onchange="AIReportWriting.saveSectionDetail('disclaimer',this.value)"><option selected="" value="global">Use global — Standard</option><option value="quick">⚡ Quick</option><option value="standard">📋 Standard</option><option value="detailed">🔬 Detailed</option><option value="comprehensive">📖 Comprehensive</option></select></span>
 </div>
-<div class="disclaimer-status no-print" id="disclaimerAIStatus">Press Generate / Refresh Disclaimer with AI at any time. The complete report is reviewed, and a general fallback is available when report details or internet access are limited.</div>
+<div class="disclaimer-status no-print" id="disclaimerAIStatus">Generate a brief disclaimer when needed. Existing manual wording will not be replaced automatically.</div>
 <div class="saved-disclaimers-panel no-print" id="savedDisclaimersPanel"></div>
 <input id="aiAssistanceUsed" name="aiAssistanceUsed" type="hidden" value=""/>
 <div class="ai-assistance-disclosure hidden" id="aiAssistanceDisclosure">
@@ -5186,7 +5187,7 @@ const SmartReportWriting = (()=>{
     const result=outcome();
     const conclusionOverwrite=Boolean(value("conclusion"))?confirm("A conclusion already exists. Press OK to replace it, or Cancel to keep it."):false;
     const recommendationExists=Boolean(value("recommendations"));
-    const recommendationOverwrite=recommendationExists?await RecommendationManager.confirmOverwrite():true;
+    const recommendationOverwrite=recommendationExists?(AIReportWriting.isNoRecommendations(value("recommendations"))?false:await RecommendationManager.confirmOverwrite()):true;
     const locationDetail=[location&&`The suspected area was identified at ${location}`,depth&&`at an estimated depth of ${depth}`,service&&`on the ${service}`].filter(Boolean).join(" ");
     const summary=[reason&&sentence(reason),sentence(findings),locationDetail&&sentence(locationDetail),limitations&&`The investigation was affected by the following limitations: ${sentence(limitations)}`].filter(Boolean).join(" ");
     const conclusionLead={"Leak Located":"A leak was located during the investigation.","Probable Leak Located":"A probable leak area was identified; however, physical confirmation is required.","Further Investigation Required":"The available evidence indicates that further investigation is required before the leak location can be confirmed.","No Leak Detected":"No leak was detected using the investigation methods available at the time of attendance.","Investigation Unable to be Completed":"The investigation could not be completed under the conditions present at the time of attendance."}[result]||"The investigation findings are recorded above.";
@@ -5198,7 +5199,7 @@ const SmartReportWriting = (()=>{
         : "Arrange further investigation under improved site conditions and engage an appropriately licensed plumber where isolation, pressure testing, excavation or repair is required.";
     setField("conclusion",conclusion,conclusionOverwrite);
     if(!recommendationExists||recommendationOverwrite)setField("recommendations",recommendation,true);
-    autoGrowTextareas();scheduleEmergencyRecovery();setStatus("Conclusion and recommendations prepared from the entered findings.");if(navigator.onLine)AIReportWriting.generateDisclaimer(null,{automatic:true});else{const s=document.getElementById("disclaimerAIStatus");if(s)s.textContent="Conclusion prepared, but AI disclaimer generation is offline. Enter it manually or use a saved disclaimer.";}
+    autoGrowTextareas();scheduleEmergencyRecovery();setStatus("Conclusion and recommendations prepared from the entered findings. Generate the disclaimer separately if needed.");
   }
   return {buildFromFindings};
 })();
@@ -6403,10 +6404,11 @@ const FieldOps=(()=>{
     if(/underground|below ground|buried/.test(findings))add("Use non-destructive digging or careful hand excavation to expose and verify the buried service before repair.");
     return out;
   }
-  function updateRecommendations(){currentRecommendations=recommendationRules();document.getElementById("automaticRecommendationData").value=JSON.stringify(currentRecommendations);}
-  function showAutomaticRecommendations(){updateRecommendations();const host=document.getElementById("automaticRecommendations"),content=document.getElementById("automaticRecommendationsContent");host?.classList.remove("hidden");if(content)content.innerHTML=currentRecommendations.length?`<ul>${currentRecommendations.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="recommendation-action-panel"><button class="btn small orange" type="button" onclick="FieldOps.applyRecommendations()">Add These to Recommendation</button><button class="btn small secondary" type="button" onclick="RecommendationManager.saveAutomatic()">Save These for Later</button></div>`:`<div class="recommendation-empty-state">No automatic recommendations are currently triggered by the report information entered.</div>`;}
+  function updateRecommendations(){currentRecommendations=AIReportWriting.isNoRecommendations(value("recommendations"))?[]:recommendationRules();document.getElementById("automaticRecommendationData").value=JSON.stringify(currentRecommendations);}
+  function showAutomaticRecommendations(){if(AIReportWriting.isNoRecommendations(value("recommendations"))){setStatus("No recommendations required was entered; no automatic advice added.");return;}updateRecommendations();const host=document.getElementById("automaticRecommendations"),content=document.getElementById("automaticRecommendationsContent");host?.classList.remove("hidden");if(content)content.innerHTML=currentRecommendations.length?`<ul>${currentRecommendations.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="recommendation-action-panel"><button class="btn small orange" type="button" onclick="FieldOps.applyRecommendations()">Add These to Recommendation</button><button class="btn small secondary" type="button" onclick="RecommendationManager.saveAutomatic()">Save These for Later</button></div>`:`<div class="recommendation-empty-state">No automatic recommendations are currently triggered by the report information entered.</div>`;}
   function recommendationKey(text){return String(text||"").toLowerCase().replace(/^[\s•*\-–—]+/,"").replace(/[^a-z0-9]+/g," ").trim();}
   function applyRecommendations(){
+    if(AIReportWriting.isNoRecommendations(value("recommendations"))){setStatus("No recommendations required retained; no automatic advice added.");return;}
     updateRecommendations();
     if(!currentRecommendations.length){setStatus("No automatic recommendations are currently triggered.");return;}
     const box=document.querySelector('[name="recommendations"]'),existing=box.value.trim();
@@ -7973,6 +7975,16 @@ const AIReportWriting=(()=>{
   const DEFAULT_MODEL="gpt-5-mini";
   const fieldLabels={findings:"Investigation Findings",conclusion:"Conclusion",recommendations:"Recommended Next Action",disclaimer:"Limitations & Disclaimer"};
   const byName=name=>document.querySelector(`[name="${name}"]`);
+  const isNoRecommendations=text=>/^(?:no\s+(?:further\s+)?recommendations?\s+(?:are\s+)?(?:required|necessary|recommended)|no\s+further\s+action\s+(?:is\s+)?(?:required|recommended)|nil\s+recommendations?|none\s+required)[.!]?$/i.test(String(text||"").trim());
+  function setNoRecommendations(){
+    const field=byName("recommendations");if(!field)return;
+    const current=String(field.value||"").trim();
+    if(current&&!isNoRecommendations(current)&&!confirm("Replace the existing recommendations with No recommendations required?"))return;
+    field.value="No recommendations required.";
+    field.dispatchEvent(new Event("input",{bubbles:true}));field.dispatchEvent(new Event("change",{bubbles:true}));
+    setAIStatus("recommendations","Technician decision saved. AI will not add to this statement.","good");
+    setStatus("No recommendations required recorded.");
+  }
   const value=name=>String(byName(name)?.value||"").trim();
   const DETAIL_STORAGE_KEY="archers_ai_detail_level_v1";
   const SECTION_DETAIL_STORAGE_KEY="archers_ai_section_detail_v1";
@@ -8055,7 +8067,7 @@ const AIReportWriting=(()=>{
     const common=["reportNo","jobNumber","reportDate","client","company","siteAddress","technician","reasonForAttendance","methods","pipeMaterial","weather","accessibility","conditionLimitations","leakEnvironment","specificLeakLocation","internalInvestigationAreas","externalInvestigationAreas","estimatedDepth","suspectedService","assessmentConfidence","surfaceMarking","outcome","leakLocated"];
     if(action==="rewrite_findings")return pick(data,[...common,"findings"]); // Deliberately excludes conclusion and recommendations.
     if(action==="write_conclusion")return pick(data,[...common,"findings","conclusion"]); // Deliberately excludes recommendations.
-    if(action==="write_recommendations")return pick(data,[...common,"findings","conclusion"]); // Existing recommendation text excluded to prevent echo or expansion.
+    if(action==="write_recommendations")return pick(data,[...common,"findings","conclusion","recommendations"]); // Respect the technician wording.
     if(action==="risk_assessment")return pick(data,[...common,"findings"]);
     return data;
   }
@@ -8100,7 +8112,7 @@ const AIReportWriting=(()=>{
         "Keep paragraphs concise, normally 2 to 4 sentences each, and avoid unnecessary repetition or filler.",
         "Use plain professional Australian English while preserving technical accuracy and all recorded facts.",
         "Do not invent facts, measurements, causes, diagnoses, site conditions or certainty that are not supported by the report.",
-        action==="write_recommendations" ? "Present separate recommendations on separate lines with a blank line between each recommendation. Keep each recommendation action-focused and concise." : "Do not add extra section headings inside the field unless the action specifically requires them."
+        action==="write_recommendations" ? "Provide only necessary next actions supported by the reported evidence. Usually one short action, never more than two or 70 words. Do not add generic testing, monitoring, trades or extra work without a specific recorded reason. Preserve a technician statement of No recommendations required exactly." : "Do not add extra section headings inside the field unless the action specifically requires them."
       ].filter(Boolean).join(" ");
       const body={action,model:DEFAULT_MODEL,report:reportText(action,section),text:String(targetText||""),question:String(question||""),detailLevel:detail.level,detailInstruction:readabilityInstruction};
       const response=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal});
@@ -8110,14 +8122,15 @@ const AIReportWriting=(()=>{
     }finally{clearTimeout(timeout);}
   }
   async function runForField(name,button,action){
-    const box=byName(name);if(!box)return;const current=box.value.trim();
+    const box=byName(name);if(!box)return;const current=box.value.trim();if(name==="recommendations"&&isNoRecommendations(current)){setAIStatus(name,"No recommendations required retained.","good");return;}
     if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
     const original=button.textContent;button.disabled=true;button.textContent="AI working…";setAIStatus(name,`Archers AI is preparing ${fieldLabels[name]||name} only…`,"working");
     try{
       const result=await request(action,current);
+      if(name==="recommendations"&&isNoRecommendations(box.value)){setAIStatus(name,"No recommendations required retained.","good");return;}
       box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));
       autoGrowTextareas();scheduleEmergencyRecovery();box.scrollIntoView({behavior:"smooth",block:"center"});
-      markAIAssistanceUsed();setAIStatus(name,"Inserted into this field. Review every fact before finalising.","good");setStatus(`${fieldLabels[name]||name} updated by Archers AI.`);if(name==="conclusion")await generateDisclaimer(null,{automatic:true});
+      markAIAssistanceUsed();setAIStatus(name,"Inserted into this field. Review every fact before finalising.","good");setStatus(`${fieldLabels[name]||name} updated by Archers AI.`);
     }catch(error){console.error("AI writing error",error);setAIStatus(name,error.name==="AbortError"?"AI request timed out.":error.message,"error");alert(error.name==="AbortError"?"AI request timed out. Check the connection and try again.":error.message);checkConnection(false);}
     finally{button.disabled=false;button.textContent=original;}
   }
@@ -8125,35 +8138,12 @@ const AIReportWriting=(()=>{
   function summariseRecommendations(button){return runForField("recommendations",button,"write_recommendations");}
   function improveManualRecommendation(button){const box=byName("recommendations");if(!box?.value.trim()){alert("Write a recommendation first, then use AI to improve it.");box?.focus();return;}return runForField("recommendations",button,"write_recommendations");}
   function buildLocalDisclaimer(){
-    const data=reportObject();
-    const methods=Array.isArray(data.methods)?data.methods:[];
-    const limitations=String(data.conditionLimitations||data.limitations||"").trim();
-    const outcome=String(data.outcome||"").trim();
-    const service=String(data.suspectedService||"").trim();
-    const depth=String(data.estimatedDepth||"").trim();
-    const parts=[];
-
-    parts.push("This report records the non-destructive investigation activities, observations and information available at the time of attendance. Results are indicative and interpretive and do not constitute physical confirmation of the exact location, depth, condition, ownership, material, alignment or cause of any underground service, leak or defect.");
-
-    if(methods.length){
-      parts.push(`The investigation methods recorded in this report included ${methods.join(", ")}. These methods can be affected by site access, service material, depth, ground conditions, moisture, ambient noise, electrical interference, signal distortion, congestion, surface conditions, equipment calibration, operator interpretation and incomplete or inaccurate asset information.`);
-    }else{
-      parts.push("Non-destructive locating and assessment equipment can be affected by site access, service material, depth, ground conditions, moisture, ambient noise, electrical interference, signal distortion, congestion, surface conditions, equipment calibration, operator interpretation and incomplete or inaccurate asset information.");
-    }
-
-    if(limitations)parts.push(`The following specific limitation was recorded during attendance: ${limitations}`);
-    if(depth)parts.push(`Any recorded depth of ${depth} is an estimate unless the service or defect was physically exposed and measured.`);
-    if(service)parts.push(`The suspected service recorded as ${service} must be independently verified before excavation, repair or alteration.`);
-    if(/No Leak Detected/i.test(outcome))parts.push("A lack of detectable evidence does not prove that a leak or defect is absent. Conditions may change and further investigation may be required if symptoms continue.");
-    if(/Probable|Further Investigation|Unable/i.test(outcome))parts.push("The recorded outcome is not conclusive and requires further investigation or physical verification before reliance is placed on the suspected location or cause.");
-    if(/Leak Located/i.test(outcome)&&!/Probable/i.test(outcome))parts.push("A located or marked leak area remains a suspected investigation result until physically exposed and confirmed by an appropriately qualified contractor.");
-
-    parts.push("Archers Underground Services Pty Ltd does not warrant that all services, leaks or defects will be detected or that interpreted markings are exact. Archers is not responsible for excavation, repair, alteration, isolation, plumbing work, design decisions or third-party actions undertaken without appropriate verification. Before excavation or repair, all relevant services and suspected locations should be verified to the appropriate quality level, including physical exposure by safe excavation or non-destructive digging where required.");
-
-    parts.push("Archers Underground Services Pty Ltd is not a licensed plumbing contractor. Plumbing isolation, pressure testing, cutting, repair, alteration or replacement must be assessed and undertaken by an appropriately licensed plumber. The client, asset owner, designer, excavator and other relevant parties remain responsible for reviewing the report, obtaining current plans and approvals, undertaking required risk assessments and confirming services before work proceeds.");
-
-    parts.push("Archers AI Assistant was used to help draft or organise portions of this report. The attending technician must review, verify and approve all AI-assisted wording before issue and remains responsible for the accuracy, suitability and final content of the report.");
-
+    const data=reportObject(),limitations=String(data.conditionLimitations||data.limitations||"").trim();
+    const parts=[
+      "This report reflects the non-destructive investigation and conditions at the time of attendance. Suspected leak locations, service positions and depths are indicative unless physically verified. Detection methods have limitations and cannot guarantee that all leaks or services will be detected.",
+      "Before excavation or repair, relevant services and suspected locations must be verified, and regulated works carried out by appropriately licensed contractors. Archers Underground Services Pty Ltd reports its investigation; the client and contractors remain responsible for planning and verifying subsequent work."
+    ];
+    if(limitations)parts.push("Recorded site limitations: "+limitations);
     return parts.join("\n\n");
   }
   async function generateDisclaimer(button=null,{automatic=false}={}){
@@ -8167,6 +8157,7 @@ const AIReportWriting=(()=>{
     // The disclaimer field may be completely empty. Generation is based on the
     // entire report, not on text already entered in this box.
     const currentText=String(field.value||"").trim();
+    if(automatic&&currentText)return true; // Never silently replace manual disclaimer wording.
     if(currentText&&!automatic){
       const replace=confirm("Replace the current limitations and disclaimer with a new report-specific draft?");
       if(!replace)return false;
@@ -8189,25 +8180,20 @@ const AIReportWriting=(()=>{
     }
 
     try{
-      let output="";
+      let output="",usedOnlineAI=false;
       if(navigator.onLine){
         const instruction=[
-          "Draft the Limitations & Disclaimer section for this Archers Underground Services report.",
-          "Use every relevant fact available in the supplied full report context, even when the Findings or Conclusion fields are blank.",
-          "Where report details are absent, provide a professional general disclaimer without inventing facts.",
-          "Address recorded investigation methods, equipment, findings, outcomes, confidence, site conditions, access restrictions, service material, estimated depth, ambient noise, weather, ground conditions, GPS, maps, surface markings and any other recorded limitations.",
-          "Explain that non-destructive locating, GPR, EMF, acoustic leak detection, GPS coordinates, map overlays, estimated depths, markings and interpreted equipment responses are indicative and interpretive and may not be exact.",
-          "State that no method guarantees that every service, leak or defect will be detected.",
-          "Require physical verification before excavation, repair, alteration or reliance on a suspected location.",
-          "Do not invent legal terms or claim a complete release from liability.",
-          "State the practical division of responsibility: Archers is responsible for carrying out and accurately reporting the investigation performed; clients, asset owners, designers, excavators and contractors remain responsible for plans, permits, risk assessments, safe excavation and physical verification before work proceeds.",
-          "State that Archers Underground Services Pty Ltd is not a licensed plumbing contractor and that plumbing isolation, cutting, pressure testing, repair, alteration and replacement must be completed by an appropriately licensed plumber.",
-          "Include this disclosure in substance: Archers AI Assistant helped draft, organise or summarise portions of the report; the attending technician must review, verify and approve all AI-assisted wording and remains responsible for the final report.",
-          "Write clear client-facing paragraphs with a blank line between each distinct topic. Keep paragraphs short and easy for a client or insurer to scan. Use the established disclaimer sub-topics where useful, but avoid repetition, invented facts or exaggerated legal language."
+          "Draft a concise Limitations & Disclaimer section for an Archers water leak detection report.",
+          "Use two short client-facing paragraphs of approximately 80–115 words total, without headings or lists.",
+          "Keep only actual recorded investigation conditions and limitations relevant to this job; invent nothing.",
+          "Explain that non-destructive interpretations are indicative, not guaranteed, and that physical verification is required before excavation or repair.",
+          "Mention licensed trades when appropriate and distinguish Archers' reporting from subsequent contractor responsibilities.",
+          "Avoid legal jargon, speculative worst cases, repeated limitations and boilerplate. Do not state a blanket exclusion of legal liability.",
+          "Do not put an AI disclosure in this field; the report displays it separately."
         ].join(" ");
 
         try{
-          output=String(await request("technician_assistant","",instruction,"disclaimer")||"").trim();
+          output=String(await request("technician_assistant","",instruction,"disclaimer")||"").trim();usedOnlineAI=!!output;
         }catch(aiError){
           console.warn("Online AI disclaimer generation failed; using the built-in report-aware fallback.",aiError);
         }
@@ -8215,19 +8201,14 @@ const AIReportWriting=(()=>{
 
       // The built-in generator always provides a usable result when the AI
       // server is unavailable, offline, or returns empty text.
-      if(!output)output=String(buildLocalDisclaimer()||"").trim();
+      if(!output||output.split(/\s+/).length>150){output=String(buildLocalDisclaimer()||"").trim();usedOnlineAI=false;}
       if(!output)throw new Error("No disclaimer wording could be generated.");
-
-      const requiredDisclosure="Archers AI Assistant was used to help draft, organise or summarise portions of this report. The attending technician must review, verify and approve all AI-assisted wording before issue and remains responsible for the accuracy, suitability and final content of the report.";
-      if(!/Archers AI Assistant/i.test(output)){
-        output=`${output}\n\n${requiredDisclosure}`;
-      }
 
       field.value=output;
       field.dispatchEvent(new Event("input",{bubbles:true}));
       field.dispatchEvent(new Event("change",{bubbles:true}));
       autoGrowTextarea(field);
-      markAIAssistanceUsed();
+      if(usedOnlineAI)markAIAssistanceUsed();
 
       if(status){
         status.textContent=navigator.onLine
@@ -8260,7 +8241,7 @@ const AIReportWriting=(()=>{
   async function copyModalResponse(){const text=document.getElementById("archersAIResponse")?.textContent||"";if(!text||text==="Ready.")return;try{await navigator.clipboard.writeText(text);setStatus("Archers AI result copied to clipboard.");}catch(_){alert("Copy was unavailable. Select the result text manually.");}}
   function initialise(){restoreDetailControls();syncAIAssistanceDisclosure();setTimeout(syncAIAssistanceDisclosure,500);document.getElementById("aiAssistanceUsed")?.addEventListener("input",syncAIAssistanceDisclosure);document.getElementById("aiAssistanceUsed")?.addEventListener("change",syncAIAssistanceDisclosure);window.addEventListener("online",()=>checkConnection(false));window.addEventListener("offline",()=>setConnectionState("offline","No internet connection"));document.getElementById("archersAIModal")?.addEventListener("click",event=>{if(event.target.id==="archersAIModal")closeModal();});checkConnection(false);}
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initialise);else initialise();
-  return {configure,checkConnection,summariseField,summariseRecommendations,improveManualRecommendation,generateDisclaimer,reportObject,reportText,focusField,openRiskAssessment,openTechnicianAssistant,closeModal,copyModalResponse,setGlobalDetailLevel,saveSectionDetail,effectiveDetail,syncAIAssistanceDisclosure};
+  return {configure,checkConnection,summariseField,summariseRecommendations,improveManualRecommendation,setNoRecommendations,isNoRecommendations,generateDisclaimer,reportObject,reportText,focusField,openRiskAssessment,openTechnicianAssistant,closeModal,copyModalResponse,setGlobalDetailLevel,saveSectionDetail,effectiveDetail,syncAIAssistanceDisclosure};
 })();
 window.AIReportWriting=AIReportWriting;
 </script>
