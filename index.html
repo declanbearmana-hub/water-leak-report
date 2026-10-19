@@ -4844,7 +4844,11 @@ function buildProfessionalPrintDocument(mode="client"){
   // A client PDF displays the saved map image, never the interactive map editor.
   clone.querySelectorAll(".map-toolbar,.map-symbol-palette,.map-help,.map-legend,.map-status,.map-touch-draw-controls,.map-utility-toolbar,.site-map-stage").forEach(function(el){el.remove();});
   const sitePreview=clone.querySelector("#sitePreview");
-  if(sitePreview&&!sitePreview.querySelector("img"))sitePreview.closest(".media-card")?.remove();
+  if(sitePreview&&!sitePreview.querySelector("img")){
+    const card=sitePreview.closest(".media-card");
+    sitePreview.remove();
+    if(card&&!card.querySelector(".field,img"))card.remove();
+  }
   const aiUsed=String(document.getElementById("aiAssistanceUsed")?.value||"").trim().toLowerCase();
   const clonedDisclosure=clone.querySelector("#aiAssistanceDisclosure");
   if(clonedDisclosure&&["yes","true","1"].includes(aiUsed))clonedDisclosure.classList.remove("hidden");
@@ -4958,7 +4962,7 @@ function buildProfessionalPrintDocument(mode="client"){
   clone.querySelectorAll(".section").forEach(function(section){
     const heading=String(section.querySelector(".section-title")?.textContent||"").trim();
     let keep=true;
-    if(/Site Map/i.test(heading)){
+    if(/Site (?:Map|Sketch)|Aerial|BYDA Plan/i.test(heading)){
       keep=Boolean(section.querySelector("#sitePreview img,.print-value:not(:empty)"));
     }else if(/Photographic Evidence/i.test(heading)){
       keep=Boolean(section.querySelector(".photo-grid .media-card,.photo-card,.preview img"));
