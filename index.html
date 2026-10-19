@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CHANGE NATURAL-AI-A4-LAYOUT-1: Plain technician writing and efficient A4 client PDF page flow. -->
 <!-- CHANGE CONCISE-WRITING-1: Preserve operator no-recommendations wording and use concise, optional disclaimer drafts. -->
 <!-- CHANGE PDF-TOPIC-HEADINGS-2: Client/internal PDF narrative fields now render distinct topics as bold professional subheadings with structured bullets and improved spacing. -->
 <!-- CHANGE AUS-DATE-JOB-FOLDERS-3: Job folder display names now use Australian DD-MM-YYYY dates and compact AUS/job/site naming while preserving report IDs and device collision protection. -->
@@ -4828,7 +4829,22 @@ function buildProfessionalPrintDocument(mode="client"){
     }
   });
 
+  // Omit blank optional fields on the client copy, not on the editable report.
+  if(!isInternal){
+    clone.querySelectorAll(".field").forEach(function(field){
+      const controls=Array.from(field.querySelectorAll("input:not([type=hidden]),select,textarea"));
+      if(controls.length!==1||field.querySelector(".required-marker,.preview,.media-card,.signature-wrap"))return;
+      const entry=controls[0];
+      if(entry.required||entry.getAttribute("aria-required")==="true"||["checkbox","radio"].includes(entry.type))return;
+      if(String(entry.value||"").trim()!==""||field.children.length>3)return;
+      field.remove();
+    });
+  }
   clone.querySelectorAll(".no-print,.operations-only,.attachment-zone,.attachment-empty,button,input[type=file],.photo-tools,.info-note,.counter-warning").forEach(function(el){el.remove();});
+  // A client PDF displays the saved map image, never the interactive map editor.
+  clone.querySelectorAll(".map-toolbar,.map-symbol-palette,.map-help,.map-legend,.map-status,.map-touch-draw-controls,.map-utility-toolbar,.site-map-stage").forEach(function(el){el.remove();});
+  const sitePreview=clone.querySelector("#sitePreview");
+  if(sitePreview&&!sitePreview.querySelector("img"))sitePreview.closest(".media-card")?.remove();
   const aiUsed=String(document.getElementById("aiAssistanceUsed")?.value||"").trim().toLowerCase();
   const clonedDisclosure=clone.querySelector("#aiAssistanceDisclosure");
   if(clonedDisclosure&&["yes","true","1"].includes(aiUsed))clonedDisclosure.classList.remove("hidden");
@@ -4916,6 +4932,7 @@ function buildProfessionalPrintDocument(mode="client"){
     const section=area.name==="limitationsDisclaimer" ? area.closest(".section") : null;
     if(section) section.classList.add("print-limitations-section");
     const narrativeFields=["findings","conclusion","recommendations","limitationsDisclaimer"];
+    if(narrativeFields.includes(area.name))area.closest(".field")?.classList.add("print-narrative-field");
     const div=narrativeFields.includes(area.name)
       ? buildStructuredPrintText(area.value||area.textContent,area.name)
       : document.createElement("div");
@@ -4941,7 +4958,9 @@ function buildProfessionalPrintDocument(mode="client"){
   clone.querySelectorAll(".section").forEach(function(section){
     const heading=String(section.querySelector(".section-title")?.textContent||"").trim();
     let keep=true;
-    if(/Photographic Evidence/i.test(heading)){
+    if(/Site Map/i.test(heading)){
+      keep=Boolean(section.querySelector("#sitePreview img,.print-value:not(:empty)"));
+    }else if(/Photographic Evidence/i.test(heading)){
       keep=Boolean(section.querySelector(".photo-grid .media-card,.photo-card,.preview img"));
     }else if(/Supporting Attachments/i.test(heading)){
       keep=Boolean(section.querySelector(".attachment-card,.attachment-item,[data-attachment-id]"));
@@ -7989,8 +8008,8 @@ const AIReportWriting=(()=>{
   const DETAIL_STORAGE_KEY="archers_ai_detail_level_v1";
   const SECTION_DETAIL_STORAGE_KEY="archers_ai_section_detail_v1";
   const detailProfiles={
-    quick:{label:"Quick",help:"Short, direct field wording with only the essential result and action.",instruction:"Keep the response concise and operational. Use only essential facts. Avoid repetition, lengthy background and unnecessary qualification."},
-    standard:{label:"Standard",help:"Balanced professional wording for normal reports.",instruction:"Provide a balanced professional response with clear findings, appropriate limitations and a practical recommendation where relevant. Avoid repetition."},
+    quick:{label:"Quick",help:"Very brief wording for straightforward jobs.",instruction:"Use the fewest straightforward sentences needed to report important facts. No fancy words, long introductions or extra advice. Keep recorded uncertainty and material facts."},
+    standard:{label:"Standard",help:"Plain, natural writing with short paragraphs.",instruction:"Write like a skilled Australian field technician. Keep it direct and brief. Use simple everyday words, short sentences and only facts actually recorded. Do not add unnecessary background or repeat findings."},
     detailed:{label:"Detailed",help:"More technical reasoning, limitations, confidence and recommendations.",instruction:"Provide a detailed technical response. Explain the reasoning supported by the recorded evidence, relevant limitations, confidence and practical next steps. Do not add unsupported facts or repetitive padding."},
     comprehensive:{label:"Comprehensive",help:"Full technical treatment for complex, insurance or dispute-sensitive reports.",instruction:"Provide a comprehensive technical response suitable for a complex, insurance or dispute-sensitive report. Clearly cover evidence, interpretation, uncertainty, limitations, alternative explanations where relevant, confidence and recommended next steps. Remain precise and avoid repetition or invented facts."}
   };
@@ -8106,11 +8125,10 @@ const AIReportWriting=(()=>{
       const detail=detailInstruction(section);
       const readabilityInstruction=[
         detail.instruction,
-        "Write for a professional client and insurance audience.",
-        "Make the response easy to scan on an A4 report: use short focused paragraphs rather than one dense block of text.",
-        "Separate distinct observations, interpretation and outcome into separate paragraphs using a blank line between paragraphs.",
-        "Keep paragraphs concise, normally 2 to 4 sentences each, and avoid unnecessary repetition or filler.",
-        "Use plain professional Australian English while preserving technical accuracy and all recorded facts.",
+        "Use normal Australian English. Sound like the attending technician wrote this, not a lawyer or an insurance company.",
+        "Use clear short sentences, straightforward words and only the useful facts.",
+        "Use blank lines between genuinely different points. One short paragraph is enough for a simple job.",
+        "Do not add generic explanations, repeated cautions or unsupported opinions to make text longer.",
         "Do not invent facts, measurements, causes, diagnoses, site conditions or certainty that are not supported by the report.",
         action==="write_recommendations" ? "Provide only necessary next actions supported by the reported evidence. Usually one short action, never more than two or 70 words. Do not add generic testing, monitoring, trades or extra work without a specific recorded reason. Preserve a technician statement of No recommendations required exactly." : "Do not add extra section headings inside the field unless the action specifically requires them."
       ].filter(Boolean).join(" ");
@@ -8126,7 +8144,7 @@ const AIReportWriting=(()=>{
     if(!current&&name!=="recommendations"){alert(`Enter some ${fieldLabels[name]||name} text first.`);box.focus();return;}
     const original=button.textContent;button.disabled=true;button.textContent="AI working…";setAIStatus(name,`Archers AI is preparing ${fieldLabels[name]||name} only…`,"working");
     try{
-      const result=await request(action,current);
+      const result=await request(action,current,"",name);
       if(name==="recommendations"&&isNoRecommendations(box.value)){setAIStatus(name,"No recommendations required retained.","good");return;}
       box.value=result;box.dispatchEvent(new Event("input",{bubbles:true}));box.dispatchEvent(new Event("change",{bubbles:true}));
       autoGrowTextareas();scheduleEmergencyRecovery();box.scrollIntoView({behavior:"smooth",block:"center"});
