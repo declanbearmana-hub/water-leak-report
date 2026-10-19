@@ -5218,13 +5218,17 @@ const SmartReportWriting = (()=>{
     const recommendationOverwrite=recommendationExists?(AIReportWriting.isNoRecommendations(value("recommendations"))?false:await RecommendationManager.confirmOverwrite()):true;
     const locationDetail=[location&&`The suspected area was identified at ${location}`,depth&&`at an estimated depth of ${depth}`,service&&`on the ${service}`].filter(Boolean).join(" ");
     const summary=[reason&&sentence(reason),sentence(findings),locationDetail&&sentence(locationDetail),limitations&&`The investigation was affected by the following limitations: ${sentence(limitations)}`].filter(Boolean).join(" ");
-    const conclusionLead={"Leak Located":"A leak was located during the investigation.","Probable Leak Located":"A probable leak area was identified; however, physical confirmation is required.","Further Investigation Required":"The available evidence indicates that further investigation is required before the leak location can be confirmed.","No Leak Detected":"No leak was detected using the investigation methods available at the time of attendance.","Investigation Unable to be Completed":"The investigation could not be completed under the conditions present at the time of attendance."}[result]||"The investigation findings are recorded above.";
-    const conclusion=[conclusionLead,locationDetail&&sentence(locationDetail),limitations&&`The stated limitations should be considered when relying on this result.`].filter(Boolean).join(" ");
+    const conclusionLead={"Leak Located":"A leak was detected during the inspection.","Probable Leak Located":"We found signs of a possible leak, but the exact spot has not been confirmed.","Further Investigation Required":"More testing is needed to confirm whether a leak is present and where it is.","No Leak Detected":"No leak was detected during the inspection.","Investigation Unable to be Completed":"We could not complete the inspection under the site conditions."}[result]||"The findings are recorded above.";
+    const conclusion=[conclusionLead,locationDetail&&sentence(locationDetail),limitations&&`Testing was limited by ${sentence(limitations)}`].filter(Boolean).join(" ");
     const recommendation=result==="Leak Located"||result==="Probable Leak Located"
-      ? "Engage an appropriately licensed plumber to physically confirm the suspected leak area and undertake any required excavation, repair, alteration or replacement. Non-destructive digging or careful hand excavation is recommended where underground services may be present."
+      ? "Have a licensed plumber check the suspected leak area before carrying out any repairs."
       : result==="No Leak Detected"
-        ? "Continue monitoring water usage and site conditions. Arrange further investigation if the suspected leak continues, conditions change or additional evidence becomes available."
-        : "Arrange further investigation under improved site conditions and engage an appropriately licensed plumber where isolation, pressure testing, excavation or repair is required.";
+        ? "No recommendations required."
+        : result==="Further Investigation Required"
+          ? "Further testing is needed to confirm the leak location."
+          : result==="Investigation Unable to be Completed"
+            ? "Address the site access or testing issues before arranging another inspection."
+            : "No recommendations required.";
     setField("conclusion",conclusion,conclusionOverwrite);
     if(!recommendationExists||recommendationOverwrite)setField("recommendations",recommendation,true);
     autoGrowTextareas();scheduleEmergencyRecovery();setStatus("Conclusion and recommendations prepared from the entered findings. Generate the disclaimer separately if needed.");
@@ -6390,47 +6394,31 @@ const FieldOps=(()=>{
   async function viewArchivedJob(id){const jobs=await getAll(),j=jobs.find(x=>x.archiveId===id);if(!j)return;alert([`Site: ${j.siteAddress}`,`Report: ${j.reportNo}`,`Date: ${j.reportDate}`,`Client: ${j.client}`,`Outcome: ${j.outcome}`,`Leak assessment: ${j.leakLocated}`,`Location: ${j.approximateLocation}`,`Confidence: ${j.assessmentConfidence}`,`Time onsite: ${fmtDuration(j.elapsedSeconds)}`,`Methods: ${(j.methods||[]).join(", ")}`,`Equipment: ${(j.equipment||[]).join(", ")}`,`Findings: ${j.findings||"Not recorded"}`,`Recommendations: ${j.recommendations||"Not recorded"}`].join("\n\n"));}
   async function refreshTimeline(){const jobs=await getAll(),q=normaliseAddress(value("siteAddress"));const matching=jobs.filter(j=>q&&j.siteAddressNorm&&(j.siteAddressNorm.includes(q)||q.includes(j.siteAddressNorm))).sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)));const host=document.getElementById("siteTimeline");host.innerHTML=matching.length?matching.map(j=>`<div class="timeline-item"><strong>${esc(j.reportDate||new Date(j.createdAt).toLocaleDateString("en-AU"))}</strong> <span class="badge">${esc(j.reportNo||"Job")}</span><br>${esc(j.outcome||"Attendance recorded")} · ${esc(j.technician||"Technician not recorded")} · ${fmtDuration(j.elapsedSeconds)}<br>${esc(j.approximateLocation||j.findings||"No location summary recorded")}</div>`).join(""):`<div class="recommendation-empty">No previous timeline entries for the current site address.</div>`;}
   function recommendationRules(){
-    const out=[];
-    const add=text=>{if(text&&!out.includes(text))out.push(text);};
-    const outcome=value("outcome"),leak=value("leakLocated"),conf=value("assessmentConfidence")||value("overallConfidence");
-    const pipe=value("pipeMaterial").toLowerCase(),limitations=value("conditionLimitations").trim(),methods=selected("methods");
-    const findings=value("findings").toLowerCase(),location=value("specificLeakLocation").trim();
-    const acoustic=value("ambientAcoustic"),access=value("accessibility"),marking=value("surfaceMarking");
-
-    if(outcome==="Leak Located"||leak==="Yes"){
-      add("Engage an appropriately licensed plumber to physically confirm and repair the suspected leak location before reinstatement.");
-      add(location?`Use the marked investigation area at ${location} as a guide for targeted physical verification before repair.`:"Mark the suspected leak area clearly on site before excavation or repair works commence.");
-      add("After repairs, pressure-test the affected section and confirm that leakage indicators have ceased before reinstatement.");
+    // The automatic helper offers at most one grounded action. It does not
+    // build long lists from every recorded method, material and condition.
+    const result=value("outcome"),leak=value("leakLocated");
+    const location=value("specificLeakLocation").trim();
+    const blocked=value("conditionLimitations").trim();
+    const access=value("accessibility").trim();
+    const confidence=value("assessmentConfidence")||value("overallConfidence");
+    let action="";
+    if(result==="Leak Located"||(!result&&leak==="Yes")){
+      action="Have a licensed plumber check and repair the suspected leak"+(location?" near "+location:"")+".";
+    }else if(result==="Probable Leak Located"||(!result&&leak==="Probable")){
+      action="Have a licensed plumber confirm the suspected leak area before repairs begin.";
+    }else if(result==="Further Investigation Required"||(!result&&leak==="Unable to confirm")){
+      action=blocked||["Restricted","Limited","Unsafe / inaccessible"].includes(access)
+        ?"Address the recorded access or testing issues before further leak testing."
+        :"Further testing is needed to confirm the leak location.";
+    }else if(result==="Investigation Unable to be Completed"){
+      action="Address the site access or testing issues before arranging another inspection.";
     }
-    if(outcome==="Probable Leak Located"||leak==="Probable"){
-      add("Complete targeted physical verification by hand excavation or non-destructive digging before repair works proceed.");
-      add("Confirm the pipe alignment and depth at the indicated area before authorising intrusive works.");
+    // A no-leak outcome never automatically creates routine monitoring or testing work.
+    // Important confidence and physical-verification limitations remain in the report.
+    if((result==="Leak Located"||result==="Probable Leak Located")&&confidence==="Low"){
+      action="Confirm the suspected leak area before any digging or repair work.";
     }
-    if(outcome==="Further Investigation Required"||leak==="Unable to confirm"){
-      add("Arrange further investigation under improved access, pressure, acoustic or isolation conditions before ruling out a leak.");
-      add("Where practicable, isolate and test smaller sections of the system to narrow the investigation area.");
-    }
-    if(outcome==="No Leak Detected"||leak==="No"){
-      add("Continue monitoring water usage and site conditions; re-investigate if evidence of leakage persists or changes.");
-      add("Record a baseline meter reading and compare subsequent readings during a period of no intended water use.");
-    }
-    if(outcome==="Investigation Unable to be Completed")add("Rectify the recorded access, safety, pressure or system limitations before arranging a return attendance.");
-    if(conf==="Low")add("Treat the indicated area as low confidence and do not excavate solely from this report; obtain physical verification first.");
-    if(conf==="Medium")add("Use the reported area as a guide only and verify the service or leak physically before intrusive works.");
-    if(/poly|pe|plastic|pvc/.test(pipe)&&!methods.includes("Fresh Water Rodder / Sonde Tracing"))add("The suspected non-conductive pipe may require traceable rodder or sonde deployment to improve alignment confidence.");
-    if(acoustic==="Poor"||acoustic==="Severe interference")add("Repeat acoustic testing during quieter conditions or use complementary investigation methods due to acoustic interference.");
-    if(access==="Restricted"||access==="Limited"||access==="Unsafe / inaccessible")add("Improve safe access to the restricted investigation area before further testing or excavation.");
-    if(limitations)add("Review and address the recorded investigation limitations before relying on the findings for excavation or repair.");
-    if(methods.includes("Ground Penetrating Radar (GPR)"))add("Treat GPR indications as interpretive only and physically verify the target before excavation.");
-    if(methods.some(m=>/acoustic/i.test(m)))add("Correlate acoustic indications with pipe alignment, fittings and site conditions before selecting an excavation point.");
-    if(methods.some(m=>/pressure/i.test(m)))add("Repeat pressure testing after any repair and document the stabilised result.");
-    if(methods.some(m=>/thermal/i.test(m)))add("Confirm thermal anomalies with a complementary method before opening finished surfaces.");
-    if(marking&&/not|no|none/i.test(marking))add("Clearly mark the final investigation area on the ground and site map before handing the site back.");
-    if(!location&&(leak==="Yes"||leak==="Probable"))add("Record a clear investigation location and mark it on the site map before finalising the report.");
-    if(/meter|usage|consumption/.test(findings))add("Compare meter readings before and after isolation testing to confirm whether unexplained consumption remains.");
-    if(/valve|isolation/.test(findings))add("Verify that relevant isolation valves operate correctly and identify any section that could not be isolated during testing.");
-    if(/underground|below ground|buried/.test(findings))add("Use non-destructive digging or careful hand excavation to expose and verify the buried service before repair.");
-    return out;
+    return action?[action]:[];
   }
   function updateRecommendations(){currentRecommendations=AIReportWriting.isNoRecommendations(value("recommendations"))?[]:recommendationRules();document.getElementById("automaticRecommendationData").value=JSON.stringify(currentRecommendations);}
   function showAutomaticRecommendations(){if(AIReportWriting.isNoRecommendations(value("recommendations"))){setStatus("No recommendations required was entered; no automatic advice added.");return;}updateRecommendations();const host=document.getElementById("automaticRecommendations"),content=document.getElementById("automaticRecommendationsContent");host?.classList.remove("hidden");if(content)content.innerHTML=currentRecommendations.length?`<ul>${currentRecommendations.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="recommendation-action-panel"><button class="btn small orange" type="button" onclick="FieldOps.applyRecommendations()">Add These to Recommendation</button><button class="btn small secondary" type="button" onclick="RecommendationManager.saveAutomatic()">Save These for Later</button></div>`:`<div class="recommendation-empty-state">No automatic recommendations are currently triggered by the report information entered.</div>`;}
