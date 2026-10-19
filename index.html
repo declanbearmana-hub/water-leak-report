@@ -4829,20 +4829,22 @@ function buildProfessionalPrintDocument(mode="client"){
     }
   });
 
-  // Omit blank optional fields on the client copy, not on the editable report.
+  // Keep required fields, but omit optional empty entries from client output only.
   if(!isInternal){
     clone.querySelectorAll(".field").forEach(function(field){
       const controls=Array.from(field.querySelectorAll("input:not([type=hidden]),select,textarea"));
       if(controls.length!==1||field.querySelector(".required-marker,.preview,.media-card,.signature-wrap"))return;
       const entry=controls[0];
       if(entry.required||entry.getAttribute("aria-required")==="true"||["checkbox","radio"].includes(entry.type))return;
-      if(String(entry.value||"").trim()!==""||field.children.length>3)return;
+      const filled=entry.tagName==="SELECT" ? String(entry.selectedOptions?.[0]?.textContent||entry.value||"").trim() : String(entry.value||"").trim();
+      if(filled && !/^(?:select|choose|please select|not selected|—|-)\b/i.test(filled))return;
+      if(field.querySelector("img,canvas,svg,[data-attachment-id]"))return;
       field.remove();
     });
   }
   clone.querySelectorAll(".no-print,.operations-only,.attachment-zone,.attachment-empty,button,input[type=file],.photo-tools,.info-note,.counter-warning").forEach(function(el){el.remove();});
   // A client PDF displays the saved map image, never the interactive map editor.
-  clone.querySelectorAll(".map-toolbar,.map-symbol-palette,.map-help,.map-legend,.map-status,.map-touch-draw-controls,.map-utility-toolbar,.site-map-stage").forEach(function(el){el.remove();});
+  clone.querySelectorAll(".map-workspace,.map-toolbar,.map-symbol-palette,.map-help,.map-legend,.map-status,.map-touch-draw-controls,.map-utility-toolbar,.site-map-stage").forEach(function(el){el.remove();});
   const sitePreview=clone.querySelector("#sitePreview");
   if(sitePreview&&!sitePreview.querySelector("img")){
     const card=sitePreview.closest(".media-card");
@@ -4955,6 +4957,18 @@ function buildProfessionalPrintDocument(mode="client"){
     if(wrap)wrap.replaceChildren(replacement);else clonedCanvas.replaceWith(replacement);
   }
   clone.querySelectorAll(".photo-grid .media-card").forEach(function(card){if(!card.querySelector(".preview img"))card.remove();});
+  if(!isInternal){
+    // Remove blank optional print values without touching evidence, technician details or required inputs.
+    clone.querySelectorAll(".field").forEach(function(field){
+      if(field.querySelector("img,.preview,.signature-wrap,[data-attachment-id],.print-check") || field.querySelector(".required-marker"))return;
+      const values=Array.from(field.querySelectorAll(".print-value"));
+      if(!values.length || values.some(v=>v.textContent.trim() && v.textContent.trim()!=="—"))return;
+      if(field.querySelector("label") && !field.querySelector("[required],[aria-required=true]"))field.remove();
+    });
+    clone.querySelectorAll(".photo-grid,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid").forEach(function(grid){
+      if(!grid.children.length)grid.remove();
+    });
+  }
 
   // CLIENT-PDF-6: Do not issue empty optional sections. Once client-internal
   // material and empty placeholders have been removed, suppress the entire
@@ -5001,20 +5015,20 @@ function buildProfessionalPrintDocument(mode="client"){
   .report-title{text-align:right}
   .report-title h1{font-size:18pt;line-height:1.12;margin:0 0 6px}
   .report-title p{margin:0;font-size:9pt}
-  .content{padding:5mm 5.5mm 4mm}
+  .content{padding:3.5mm 4mm 3mm}
   .quick-meta,.grid2,.grid3,.grid4,.check-grid,.result-grid,.equipment-grid,.photo-grid{
-    display:grid;gap:7px 10px
+    display:grid;gap:5px 8px
   }
   .quick-meta,.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}
   .grid3,.check-grid,.equipment-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .grid2,.photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .result-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
   .section{
-    margin:0 0 3mm;border:1px solid #c8d2dc;border-radius:4px;
+    margin:0 0 2mm;border:1px solid #c8d2dc;border-radius:4px;
     overflow:visible;background:#fff;break-inside:auto
   }
   .section-title{
-    margin:0 0 2.5mm;padding:6px 9px;
+    margin:0 0 1.5mm;padding:5px 9px;
     background:#173f68;color:#fff;border-left:5px solid #f28c28;
     font-size:12pt;font-weight:800;letter-spacing:.05px;
     break-after:avoid-page;page-break-after:avoid
@@ -5025,29 +5039,32 @@ function buildProfessionalPrintDocument(mode="client"){
   .section>.recommendation-box,.section>.leak-location-panel{
     margin-left:9px;margin-right:9px
   }
-  .section>*:last-child{margin-bottom:7px}
+  .section>*:last-child{margin-bottom:5px}
   .field,.check-item,.result-option,.equipment-item,.declaration,
   .recommendation-box,.signature-wrap{break-inside:avoid-page}
+  .field.print-narrative-field{break-inside:auto;page-break-inside:auto}
+  .section>textarea,.section>.print-rich-text{display:block;margin:0 9px 7px}
+  .section>.print-rich-text{break-inside:auto;page-break-inside:auto}
   .field label,.mini-title{
     display:block;margin-bottom:3px;font-size:8pt;font-weight:800;
     color:#42566a;text-transform:uppercase;letter-spacing:.2px
   }
   .print-value{
-    min-height:19px;padding:4px 6px;border:1px solid #d7dfe6;
+    min-height:17px;padding:3px 5px;border:1px solid #d7dfe6;
     border-radius:3px;background:#fbfcfd;white-space:pre-wrap;
     overflow-wrap:anywhere
   }
   .print-multiline{min-height:25px;line-height:1.42;break-inside:auto}
   .print-rich-text{padding:7px 9px;white-space:normal;break-inside:auto}
   .print-topic-heading{
-    margin:12px 0 5px;padding:5px 7px;
+    margin:7px 0 4px;padding:4px 7px;
     background:#eef3f7;border-left:4px solid #f28c28;
     color:#0b2745;font-size:9.6pt;font-weight:900;
     letter-spacing:.12px;line-height:1.3;
     break-after:avoid-page;page-break-after:avoid
   }
   .print-topic-heading:first-child{margin-top:0}
-  .print-topic-paragraph{margin:0 0 8px;line-height:1.48;orphans:2;widows:2}
+  .print-topic-paragraph{margin:0 0 5px;line-height:1.4;orphans:2;widows:2}
   .print-topic-paragraph:last-child{margin-bottom:0}
   .print-topic-list{margin:2px 0 10px 20px;padding:0}
   .print-topic-list li{margin:0 0 6px;padding-left:2px;line-height:1.5}
@@ -5070,18 +5087,21 @@ function buildProfessionalPrintDocument(mode="client"){
     border:1px solid #d3dce4;border-radius:3px;padding:6px;background:#fff
   }
   .print-check{font-weight:900;color:#2e7d32}
-  .media-card{border:1px solid #bcc8d3;padding:8px;break-inside:avoid-page}
+  .media-card{border:1px solid #bcc8d3;padding:6px;break-inside:avoid-page}
   .preview{min-height:0;display:flex;align-items:center;justify-content:center}
-  .preview img{width:100%;max-height:105mm;object-fit:contain}
-  .preview.site img{max-height:135mm}
+  .preview img{display:block;width:100%;height:auto;max-height:78mm;object-fit:contain}
+  .preview.site img{max-height:125mm}
+  .photo-grid .media-card{min-width:0;padding:5px}
+  .photo-grid .preview{margin-bottom:3px}
+  .photo-grid .preview img{max-height:78mm}
   .photo-title-input{border:0;font-weight:800;font-size:10.5pt;width:100%}
-  .signature-wrap{height:29mm;border:1px solid #bcc8d3}
+  .signature-wrap{height:22mm;border:1px solid #bcc8d3}
   .print-signature{width:100%;height:100%;object-fit:contain}
   .print-signature-blank{height:100%}
   .declaration{padding:8px;border:1px solid #bcc8d3;background:#f8fafc}
   .recommendation-box{background:#fffaf4;border-color:#efc48e}
   .footer{
-    margin-top:5mm;background:#0b2745;color:#fff;padding:7px 10px;
+    margin-top:2mm;background:#0b2745;color:#fff;padding:5px 9px;
     border-top:4px solid #f28c28;display:grid;
     grid-template-columns:175px 1fr auto;gap:10px;align-items:center;
     font-size:8.25pt;break-inside:avoid-page
@@ -5119,7 +5139,8 @@ function buildProfessionalPrintDocument(mode="client"){
       break-inside:avoid-page;page-break-inside:avoid
     }
     /* Allow multi-paragraph findings, conclusions and disclaimers to fill available page space. */
-    .field.print-narrative-field,.print-narrative-field .print-rich-text{
+    .field.print-narrative-field,.print-narrative-field .print-rich-text,
+    .section>.print-rich-text,.section>.print-multiline{
       break-inside:auto!important;page-break-inside:auto!important
     }
     .header{break-after:avoid-page;page-break-after:avoid}
